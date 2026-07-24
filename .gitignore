@@ -1,0 +1,7 @@
+node_modules/
+.next/
+data.json
+data.json.tmp
+data.json.corrupted.bak
+*.db
+.DS_Store
