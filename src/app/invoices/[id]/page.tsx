@@ -133,7 +133,7 @@ export default function InvoiceDetailPage() {
           <div className="no-print border-t border-slate-200 pt-6 mt-6">
             <h4 className="text-sm font-semibold text-slate-700 mb-3">Payments</h4>
             <table className="w-full text-sm"><thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500">Date</th><th className="text-left py-2 text-slate-500">Method</th><th className="text-left py-2 text-slate-500">Reference</th><th className="text-right py-2 text-slate-500">Amount</th></tr></thead>
-              <tbody>{inv.payments.map((p) => (<tr key={p.id} className="border-b border-slate-100"><td className="py-2">{p.payment_date}</td><td className="py-2">{p.method}</td><td className="py-2">{p.reference}</td><td className="py-2 text-right font-medium">{fmt(p.amount)}</td></tr>))}</tbody>
+              <tbody>{(inv.payments || []).map((p) => (<tr key={p.id} className="border-b border-slate-100"><td className="py-2">{p.payment_date}</td><td className="py-2">{p.method}</td><td className="py-2">{p.reference}</td><td className="py-2 text-right font-medium">{fmt(p.amount)}</td></tr>))}</tbody>
             </table>
           </div>
         )}
