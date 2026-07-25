@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const search = url.searchParams.get('search') || undefined;
   const clientId = url.searchParams.get('client_id') || undefined;
   const type = url.searchParams.get('type') || 'invoice';
-  return NextResponse.json(db.invoices.all(1, { status, search, clientId: clientId ? parseInt(clientId) : undefined, type }));
+  return NextResponse.json(db.invoices.all(1, { status, search, client_id: clientId ? parseInt(clientId) : undefined, type }));
 }
 
 export async function POST(req: Request) {
@@ -17,11 +17,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Client, dates, and at least one item are required' }, { status: 400 });
   }
   const inv = db.invoices.insert(body.company_id || 1, {
-    client_id, issue_date, due_date,
+    client_id: parseInt(client_id),
+    issue_date,
+    due_date,
     type: type || 'invoice',
-    items, tax_rate, discount_type, discount_value,
-    shipping: shipping || 0,
-    notes, terms,
+    items,
+    tax_rate: tax_rate ?? undefined,
+    discount_type: discount_type || undefined,
+    discount_value: discount_value ?? undefined,
+    shipping: shipping ?? 0,
+    notes: notes || undefined,
+    terms: terms || undefined,
   });
   return NextResponse.json(inv, { status: 201 });
 }
