@@ -512,10 +512,23 @@ export const db = {
       saveStore();
       return row;
     },
+
+    updateStatus(id: number, status: string): InvoiceRow | null {
+      const idx = store.invoices.findIndex((i) => i.id === id);
+      if (idx === -1) return null;
+      store.invoices[idx].status = status as InvoiceRow['status'];
+      store.invoices[idx].updated_at = now();
+      saveStore();
+      return this.getById(id)!;
+    },
   },
 
   payments: {
-    getByInvoice(invoiceId: number): PaymentRow[] {
+    all(): PaymentRow[] {
+      return [...store.payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+    },
+
+    byInvoice(invoiceId: number): PaymentRow[] {
       return store.payments.filter((p) => p.invoice_id === invoiceId).sort((a, b) => b.payment_date.localeCompare(a.payment_date));
     },
     insert(data: { invoice_id: number; amount: number; method: string; reference?: string; payment_date: string; notes?: string }): PaymentRow {
