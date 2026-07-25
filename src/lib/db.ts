@@ -464,7 +464,7 @@ export const db = {
           });
         }
       }
-      saveStore(); return this.getById(id);
+      saveStore(); return this.getById(id) || null;
     },
     delete(id: number): boolean {
       const idx = store.invoices.findIndex((i) => i.id === id);
