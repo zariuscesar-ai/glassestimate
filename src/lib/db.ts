@@ -196,7 +196,7 @@ function loadStore(): StoreData {
       const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
       const def = defaultStore();
       for (const k of Object.keys(def)) {
-        if (!(k in data)) (data as Record<string, unknown>)[k] = (def as Record<string, unknown>)[k];
+        if (!(k in data)) (data as any)[k] = (def as any)[k];
       }
       return data as StoreData;
     }
