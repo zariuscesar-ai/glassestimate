@@ -62,15 +62,15 @@
 .dark .bg-white { @apply bg-slate-800; }
 
 /* Text colors — ALL shades */
-.dark h1, .dark h2, .dark h3, .dark h4 { @apply text-slate-100; }
-.dark .text-slate-900 { @apply text-slate-100; }
-.dark .text-slate-800 { @apply text-slate-200; }
-.dark .text-slate-700 { @apply text-slate-300; }
-.dark .text-slate-600 { @apply text-slate-400; }
-.dark .text-slate-500 { @apply text-slate-400; }
-.dark .text-slate-400 { @apply text-slate-500; }
-.dark .stat-value { @apply text-slate-100; }
-.dark .stat-label { @apply text-slate-400; }
+.dark h1, .dark h2, .dark h3, .dark h4 { color: #f1f5f9; }
+.dark .text-slate-900 { color: #f1f5f9; }
+.dark .text-slate-800 { color: #e2e8f0; }
+.dark .text-slate-700 { color: #cbd5e1; }
+.dark .text-slate-600 { color: #94a3b8; }
+.dark .text-slate-500 { color: #94a3b8; }
+.dark .text-slate-400 { color: #64748b; }
+.dark .stat-value { color: #f1f5f9; }
+.dark .stat-label { color: #94a3b8; }
 
 /* Links */
 .dark .text-navy-600 { @apply text-blue-400; }
