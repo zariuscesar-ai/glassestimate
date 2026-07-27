@@ -9,8 +9,7 @@
     transition: background-color 0.3s, color 0.3s;
   }
 
-  .dark body,
-  body.dark {
+  .dark body, body.dark {
     @apply bg-slate-900 text-slate-100;
   }
 }
@@ -49,32 +48,89 @@
   .badge-viewed { @apply badge bg-cyan-100 text-cyan-700; }
   .badge-cancelled { @apply badge bg-slate-200 text-slate-500; }
 
-  .stat-card {
-    @apply card p-5 transition-shadow hover:shadow-md;
-  }
-  .stat-value {
-    @apply text-2xl font-bold text-slate-900;
-  }
-  .stat-label {
-    @apply text-sm text-slate-500 mb-1;
-  }
+  .stat-card { @apply card p-5 transition-shadow hover:shadow-md; }
+  .stat-value { @apply text-2xl font-bold text-slate-900; }
+  .stat-label { @apply text-sm text-slate-500 mb-1; }
 }
 
-/* ── Dark Mode ── */
+/* ────────────────── DARK MODE ────────────────── */
+/* Cards & backgrounds */
 .dark .card { @apply bg-slate-800 border-slate-700; }
 .dark .stat-card { @apply bg-slate-800 border-slate-700; }
+.dark main { @apply bg-slate-950; }
+.dark .bg-slate-50 { @apply bg-slate-900; }
+.dark .bg-white { @apply bg-slate-800; }
+
+/* Text colors — ALL shades */
+.dark h1, .dark h2, .dark h3, .dark h4 { @apply text-slate-100; }
+.dark .text-slate-900 { @apply text-slate-100; }
+.dark .text-slate-800 { @apply text-slate-200; }
+.dark .text-slate-700 { @apply text-slate-300; }
+.dark .text-slate-600 { @apply text-slate-400; }
+.dark .text-slate-500 { @apply text-slate-400; }
+.dark .text-slate-400 { @apply text-slate-500; }
 .dark .stat-value { @apply text-slate-100; }
-.dark .table-header { @apply bg-slate-800 text-slate-400; }
+.dark .stat-label { @apply text-slate-400; }
+
+/* Links */
+.dark .text-navy-600 { @apply text-blue-400; }
+.dark .text-navy-900 { @apply text-blue-100; }
+
+/* Green/red keep readability */
+.dark .text-green-600 { @apply text-green-400; }
+.dark .text-red-600 { @apply text-red-400; }
+.dark .text-red-500 { @apply text-red-400; }
+.dark .text-amber-600 { @apply text-amber-400; }
+.dark .text-blue-600 { @apply text-blue-400; }
+.dark .text-emerald-600 { @apply text-emerald-400; }
+
+/* Tables */
+.dark .table-header { @apply bg-slate-800 text-slate-300; }
 .dark .table-cell { @apply border-slate-700 text-slate-300; }
+.dark tr.hover\:bg-slate-50:hover { background-color: rgb(30 41 59) !important; }
+.dark .border-slate-200 { @apply border-slate-700; }
+.dark .border-slate-100 { @apply border-slate-700; }
+
+/* Inputs & selects */
 .dark .input { @apply bg-slate-800 border-slate-600 text-slate-100 placeholder:text-slate-500; }
-.dark .select { @apply bg-slate-800 border-slate-600 text-slate-100; }
+.dark .select {
+  @apply bg-slate-800 border-slate-600 text-slate-100;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e") !important;
+}
 .dark .label { @apply text-slate-300; }
+
+/* Buttons */
 .dark .btn-secondary { @apply bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600; }
 .dark .btn-ghost { @apply text-slate-300 hover:bg-slate-700; }
+.dark .btn-primary { @apply bg-blue-600 hover:bg-blue-500; }
+
+/* Badges */
 .dark .badge-draft { @apply bg-slate-700 text-slate-300; }
-.dark main { @apply bg-slate-950; }
+.dark .badge-sent { @apply bg-blue-900 text-blue-300; }
+.dark .badge-paid { @apply bg-green-900 text-green-300; }
+.dark .badge-overdue { @apply bg-red-900 text-red-300; }
+.dark .badge-accepted { @apply bg-emerald-900 text-emerald-300; }
+.dark .badge-expired { @apply bg-amber-900 text-amber-300; }
+.dark .badge-converted { @apply bg-purple-900 text-purple-300; }
+.dark .badge-viewed { @apply bg-cyan-900 text-cyan-300; }
+.dark .badge-cancelled { @apply bg-slate-700 text-slate-400; }
+
+/* Specific components */
+.dark .bg-navy-50 { @apply bg-slate-700; }
+.dark .bg-navy-100 { @apply bg-slate-600; }
+.dark .ring-navy-500 { @apply ring-blue-500; }
+.dark .border-navy-200 { @apply border-slate-600; }
+.dark .border-navy-100 { @apply border-slate-600; }
+.dark .text-navy-700 { @apply text-blue-300; }
+
+/* Dividers */
+.dark .border-t { border-top-color: rgb(51 65 85) !important; }
+.dark .border-b { border-bottom-color: rgb(51 65 85) !important; }
+.dark .border-slate-300 { @apply border-slate-600; }
+.dark .border-t-2 { border-top-color: rgb(71 85 105) !important; }
 
 @media print {
-  body { background: white !important; }
+  body { background: white !important; color: #1e293b !important; }
   .no-print { display: none !important; }
+  .dark body { background: white !important; color: #1e293b !important; }
 }
