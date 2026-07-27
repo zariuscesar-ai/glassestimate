@@ -33,6 +33,7 @@ export default function Sidebar() {
     { href: '/jobs', label: 'Jobs', icon: '🔧' },
     { href: '/payments', label: 'Payments', icon: '💰' },
     { href: '/visual-estimator', label: 'Visual Estimator', icon: '🎨' },
+    { href: '/shape-calculator', label: 'Shape Calculator', icon: '📐' },
     { href: '/reports', label: 'Reports', icon: '📊' },
     { href: '/settings', label: 'Settings', icon: '⚙' },
   ];
