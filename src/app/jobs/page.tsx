@@ -24,7 +24,8 @@ export default function JobsPage() {
       const params = statusFilter ? `?status=${statusFilter}` : '';
       const res = await fetch(`/api/jobs${params}`);
       if (!res.ok) throw new Error('');
-      setJobs(Array.isArray(await res.json()) ? await (await fetch(`/api/jobs${params}`)).json() : []);
+      const data = await res.json();
+      setJobs(Array.isArray(data) ? data : []);
     } catch { setError('Could not load jobs.'); }
     finally { setLoading(false); }
   };

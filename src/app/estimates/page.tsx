@@ -13,7 +13,8 @@ export default function EstimatesPage() {
     try {
       const res = await fetch('/api/invoices?type=estimate');
       if (!res.ok) throw new Error('');
-      setEstimates(Array.isArray(await res.json()) ? await (await fetch('/api/invoices?type=estimate')).json() : []);
+      const data = await res.json();
+      setEstimates(Array.isArray(data) ? data : []);
     } catch { setError('Could not load'); }
     finally { setLoading(false); }
   };

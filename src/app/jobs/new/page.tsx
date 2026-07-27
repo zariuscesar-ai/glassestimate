@@ -27,17 +27,14 @@ export default function NewJobPage() {
   const [glassTypes, setGlassTypes] = useState('');
 
   useEffect(() => {
-    Promise.all([fetch('/api/clients'), fetch('/api/invoices?type=estimate')]).then(async ([cR, eR]) => {
-      if (cR.ok) setClients(Array.isArray(await cR.json()) ? await (await fetch('/api/clients')).json() : []);
-      if (eR.ok) setEstimates(Array.isArray(await eR.json()) ? await (await fetch('/api/invoices?type=estimate')).json() : []);
-    }).finally(() => setLoading(false));
-  }, []);
-
-  // Load correctly
-  useEffect(() => {
-    fetch('/api/clients').then(r => r.json()).then(d => { if (Array.isArray(d)) setClients(d); }).catch(() => {});
-    fetch('/api/invoices?type=estimate').then(r => r.json()).then(d => { if (Array.isArray(d)) setEstimates(d); }).catch(() => {});
-    setLoading(false);
+    (async () => {
+      try {
+        const [cR, eR] = await Promise.all([fetch('/api/clients'), fetch('/api/invoices?type=estimate')]);
+        if (cR.ok) { const d = await cR.json(); if (Array.isArray(d)) setClients(d); }
+        if (eR.ok) { const d = await eR.json(); if (Array.isArray(d)) setEstimates(d); }
+      } catch {}
+      finally { setLoading(false); }
+    })();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
