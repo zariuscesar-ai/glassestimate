@@ -10,6 +10,7 @@ export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const [inv, setInv] = useState<Inv | null>(null);
+  const [company, setCompany] = useState<Record<string,string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showPayment, setShowPayment] = useState(false);
@@ -19,9 +20,13 @@ export default function InvoiceDetailPage() {
   const fetchInvoice = async () => {
     setLoading(true); setError('');
     try {
-      const res = await fetch(`/api/invoices/${params.id}`);
-      if (!res.ok) { setError('Invoice not found.'); setLoading(false); return; }
-      setInv(await res.json());
+      const [invRes, coRes] = await Promise.all([
+        fetch(`/api/invoices/${params.id}`),
+        fetch('/api/companies'),
+      ]);
+      if (!invRes.ok) { setError('Invoice not found.'); setLoading(false); return; }
+      setInv(await invRes.json());
+      if (coRes.ok) { const coData = await coRes.json(); setCompany(coData[0] || {}); }
     } catch (err) { console.error(err); setError('Could not load invoice.'); }
     finally { setLoading(false); }
   };
@@ -85,10 +90,16 @@ export default function InvoiceDetailPage() {
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 max-w-3xl mx-auto print:shadow-none print:border-none print:p-0 print:max-w-none">
         <div className="flex justify-between items-start mb-10">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Eagles Glass Inc</h1>
-            <p className="text-sm text-slate-500 mt-1">11105 Shady Trail Ste 122, Dallas, Texas 75229</p>
-            <p className="text-sm text-slate-500">214 447 8919 &middot; support@eaglesglass1.com</p>
+          <div className="flex items-start gap-4">
+            {company.logo && <img src={company.logo} alt="Logo" className="h-16 w-auto object-contain print:h-16" />}
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">{company.name || 'Eagles Glass Inc'}</h1>
+              {company.address && <p className="text-sm text-slate-500 mt-1">{company.address}</p>}
+              {company.phone && <p className="text-sm text-slate-500">Phone: {company.phone}</p>}
+              {company.email && <p className="text-sm text-slate-500">{company.email}</p>}
+              {company.website && <p className="text-sm text-slate-500">{company.website}</p>}
+              {company.tax_id && <p className="text-sm text-slate-400 mt-1">Tax ID: {company.tax_id}</p>}
+            </div>
           </div>
           <div className="text-right">
             <h2 className="text-4xl font-bold text-slate-200">{inv.type === 'estimate' ? 'ESTIMATE' : 'INVOICE'}</h2>
