@@ -19,6 +19,15 @@ const DOOR_TYPES = [
   { id: 'sliding', name: 'Sliding Door', price: 4200, width: 4, icon: '🪟' },
 ];
 
+const GLASS_BLOCKS = [
+  { name: '3ft Panel', wall: { x1:0,y1:0,x2:60,y2:0 }, style: 'frameless-half', label: '3\'' },
+  { name: '5ft Panel', wall: { x1:0,y1:0,x2:100,y2:0 }, style: 'frameless-half', label: '5\'' },
+  { name: '3ft + Door', walls: [{ x1:0,y1:0,x2:30,y2:0,style:'frameless-half' },{ x1:90,y1:0,x2:120,y2:0,style:'frameless-half' }], door: { type:'single-swing',x:30,y:0,width:60,height:15 }, label: '3\'+🚪' },
+  { name: '5ft Storefront', wall: { x1:0,y1:0,x2:100,y2:0 }, style: 'storefront', label: '5\' SF' },
+  { name: 'Corner L', walls: [{ x1:0,y1:0,x2:80,y2:0,style:'framed' },{ x1:80,y1:0,x2:80,y2:-80,style:'framed' }], label: 'L 4\'' },
+  { name: '8ft Wall', wall: { x1:0,y1:0,x2:160,y2:0 }, style: 'framed', label: '8\'' },
+];
+
 const TEMPLATES = [
   { name: '20ft Storefront', walls: [{ x1: 50, y1: 300, x2: 650, y2: 300, style: 'storefront' }], doors: [{ x: 250, y: 300, width: 200, height: 20, type: 'double-swing' }] },
   { name: 'Office Partition', walls: [{ x1: 50, y1: 200, x2: 350, y2: 200, style: 'frameless-half' }, { x1: 350, y1: 200, x2: 350, y2: 400, style: 'frameless-half' }], doors: [{ x: 175, y: 200, width: 60, height: 15, type: 'single-swing' }] },
@@ -50,6 +59,7 @@ export default function VisualEstimatorPage() {
   const [scaleP1, setScaleP1] = useState<{x:number;y:number}|null>(null);
   const [scaleP2, setScaleP2] = useState<{x:number;y:number}|null>(null);
   const [pxPerFt, setPxPerFt] = useState(0);
+  const [photoOpacity, setPhotoOpacity] = useState(70);
   const [saving, setSaving] = useState(false);
 
   // Load clients
@@ -136,6 +146,34 @@ export default function VisualEstimatorPage() {
   const removeDoor = (id:number)=>setDoors(doors.filter(d=>d.id!==id));
   const clearAll = ()=>{if(confirm('Clear all?')){setWalls([]);setDoors([]);setShowViz(false);}};
 
+  const dropBlock = (block: typeof GLASS_BLOCKS[0], clickX: number, clickY: number) => {
+    const px = pxPerFt || 20;
+    const style = ('style' in block) ? block.style : ((block as any).walls?.[0]?.style || 'frameless-half');
+    if ((block as any).wall && !(block as any).walls) {
+      const w = (block as any).wall;
+      const len = Math.abs((w.x2-w.x1)||60) * (px/20);
+      setWalls([...walls, { id: Date.now(), x1: clickX-w.x1, y1: clickY-w.y1, x2: clickX-w.x1+len, y2: clickY-w.y1, style, lengthFt: pxPerFt>0 ? Math.round(len/pxPerFt*100)/100 : 0 }]);
+    } else if ((block as any).walls) {
+      const newWalls = (block as any).walls.map((w:any) => {
+        const len = Math.abs((w.x2-w.x1)||60) * (px/20);
+        return { id: Date.now()+Math.random(), x1: clickX-w.x1, y1: clickY-w.y1, x2: clickX-w.x1+len, y2: clickY-w.y1, style: w.style||style, lengthFt: 0 };
+      });
+      setWalls([...walls, ...newWalls]);
+    }
+    if ((block as any).door) {
+      const d = (block as any).door;
+      setDoors(prev => [...prev, { id: Date.now()+Math.random(), x: clickX+d.x, y: clickY+d.y, width: d.width||60, height: d.height||15, type: d.type||'single-swing' }]);
+    }
+  };
+
+  const exportFloorPlan = () => {
+    const c = vizRef.current; if (!c) return;
+    const link = document.createElement('a');
+    link.download = `${projectName||'floor-plan'}.png`;
+    link.href = c.toDataURL('image/png');
+    link.click();
+  };
+
   // Canvas render
   useEffect(()=>{
     const c = canvasRef.current; if(!c)return;
@@ -143,7 +181,7 @@ export default function VisualEstimatorPage() {
     const img=new Image();
     const render=()=>{
       ctx.clearRect(0,0,c.width,c.height);
-      if(photo)ctx.drawImage(img,0,0,c.width,c.height);
+      if(photo){ctx.globalAlpha=photoOpacity/100;ctx.drawImage(img,0,0,c.width,c.height);ctx.globalAlpha=1;}
       else{ctx.fillStyle='#f8fafc';ctx.fillRect(0,0,c.width,c.height);
         for(let i=0;i<c.width;i+=40){ctx.strokeStyle='#e2e8f0';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,c.height);ctx.stroke();
           ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(c.width,i);ctx.stroke();}}
@@ -277,6 +315,13 @@ export default function VisualEstimatorPage() {
           </div>
 
           <div className="card p-3">
+            <h2 className="text-sm font-semibold mb-2">Glass Blocks <span className="text-slate-400 text-[10px]">(click to drop)</span></h2>
+            <div className="grid grid-cols-3 gap-1">
+              {GLASS_BLOCKS.map(b=><button key={b.name} onClick={()=>{setActiveTool('line'); dropBlock(b, 200+Math.random()*300, 200+Math.random()*150);}} className="text-center p-1.5 rounded text-[10px] hover:bg-slate-50 border border-slate-200 leading-tight" title={`Drop ${b.name}`}>{b.label}<br/><span className="text-slate-400">{b.label.split('\'')[1]||b.name.split(' ')[0]}</span></button>)}
+            </div>
+          </div>
+
+          <div className="card p-3">
             <h2 className="text-sm font-semibold mb-2">Wall Style</h2>
             {WALL_STYLES.map(s=><button key={s.id} onClick={()=>{setActiveStyle(s.id);setActiveTool('line');}} className={`w-full text-left px-3 py-2 rounded-lg text-xs mb-1 flex items-center gap-2 ${activeStyle===s.id?'bg-navy-100 text-navy-900 font-medium ring-1 ring-navy-500':'hover:bg-slate-50 text-slate-700'}`}><span className="w-3 h-3 rounded-full shrink-0" style={{background:s.color}}/>{s.name}<span className="ml-auto text-slate-400">${s.priceFt}/ft</span></button>)}
           </div>
@@ -314,12 +359,22 @@ export default function VisualEstimatorPage() {
             {pxPerFt===0?'⚠ Set scale with 📏 first':`Drawing: ${WALL_STYLES.find(s=>s.id===activeStyle)?.name}`}
             {activeTool==='draw'&&' — Freehand mode'} {activeTool==='door'&&' — Click to place door'}
           </p>
+          {photo && (
+            <div className="flex items-center gap-2 justify-center mt-1">
+              <span className="text-xs text-slate-400">Photo opacity:</span>
+              <input type="range" min={10} max={100} value={photoOpacity} onChange={e=>setPhotoOpacity(parseInt(e.target.value))} className="w-24 h-4 accent-navy-600" />
+              <span className="text-xs text-slate-400 w-8">{photoOpacity}%</span>
+            </div>
+          )}
 
           {showViz&&(
             <div className="card overflow-hidden border-2 border-navy-200 mt-4">
               <div className="px-4 py-2 bg-navy-50 border-b border-navy-100 flex justify-between items-center">
                 <h2 className="text-sm font-semibold text-navy-900">🏗 Floor Plan Visualization</h2>
-                <button onClick={()=>setShowViz(false)} className="text-xs text-navy-500 hover:text-navy-700">Hide</button>
+                <div className="flex gap-2">
+                  <button onClick={exportFloorPlan} className="text-xs bg-navy-600 text-white px-3 py-1 rounded hover:bg-navy-700">📥 Download PNG</button>
+                  <button onClick={()=>setShowViz(false)} className="text-xs text-navy-500 hover:text-navy-700">Hide</button>
+                </div>
               </div>
               <canvas ref={vizRef} width={700} height={450} className="w-full"/>
               <div className="px-4 py-2 bg-navy-50 text-xs text-navy-600 text-center">Ready to share with client — includes all walls, doors, and dimensions</div>
