@@ -8,7 +8,7 @@ export default function EstimatesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetch = async () => {
+  const loadEstimates = async () => {
     setLoading(true); setError('');
     try {
       const res = await fetch('/api/invoices?type=estimate');
@@ -19,13 +19,13 @@ export default function EstimatesPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { loadEstimates(); }, []);
 
   const fmt = (n: number) => { try { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n||0); } catch { return '$0.00'; } };
   const badge = (s: string) => { const m: Record<string,string> = { draft:'badge-draft', sent:'badge-sent', accepted:'badge-accepted', converted:'badge-converted', expired:'badge-expired' }; return m[s]||'badge-draft'; };
 
   if (loading) return <div className="flex justify-center py-20"><p className="text-slate-400 text-lg">Loading estimates...</p></div>;
-  if (error) return <div className="flex flex-col items-center py-20"><p className="text-red-500 text-lg mb-4">{error}</p><button onClick={fetch} className="btn-primary">Retry</button></div>;
+  if (error) return <div className="flex flex-col items-center py-20"><p className="text-red-500 text-lg mb-4">{error}</p><button onClick={loadEstimates} className="btn-primary">Retry</button></div>;
 
   return (
     <div>
