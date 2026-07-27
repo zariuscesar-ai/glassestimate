@@ -149,6 +149,30 @@ export interface VisualProjectRow {
   updated_at: string;
 }
 
+export interface JobRow {
+  id: number;
+  company_id: number;
+  client_id: number;
+  estimate_id: number | null;
+  invoice_id: number | null;
+  name: string;
+  description: string;
+  status: 'scheduled' | 'in_progress' | 'pending_materials' | 'ready_for_install' | 'completed' | 'on_hold';
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  start_date: string;
+  end_date: string;
+  assigned_crew: string;
+  job_site_address: string;
+  glass_types: string;
+  total_sq_ft: number;
+  total_linear_ft: number;
+  door_count: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  client_name?: string;
+}
+
 interface StoreData {
   companies: CompanyRow[];
   clients: ClientRow[];
@@ -159,6 +183,7 @@ interface StoreData {
   invoice_items: InvoiceItemRow[];
   payments: PaymentRow[];
   visual_projects: VisualProjectRow[];
+  jobs: JobRow[];
   next_ids: Record<string, number>;
 }
 
@@ -238,7 +263,8 @@ function defaultStore(): StoreData {
     invoice_items: [],
     payments: [],
     visual_projects: [],
-    next_ids: { companies: 2, clients: 1, products: 1, bundles: 1, bundle_items: 1, invoices: 1, invoice_items: 1, payments: 1, visual_projects: 1 },
+    jobs: [],
+    next_ids: { companies: 2, clients: 1, products: 1, bundles: 1, bundle_items: 1, invoices: 1, invoice_items: 1, payments: 1, visual_projects: 1, jobs: 1 },
   };
 }
 
@@ -635,6 +661,47 @@ export const db = {
       const idx = store.visual_projects.findIndex((v) => v.id === id);
       if (idx === -1) return false;
       store.visual_projects.splice(idx, 1); saveStore(); return true;
+    },
+  },
+
+  // ---- Jobs ----
+  jobs: {
+    all(companyId: number): JobRow[] {
+      const list = store.jobs.filter((j) => j.company_id === companyId);
+      const cm = new Map(store.clients.map((c) => [c.id, c]));
+      for (const j of list) j.client_name = cm.get(j.client_id)?.name;
+      return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    },
+    getById(id: number): JobRow | undefined {
+      const j = store.jobs.find((x) => x.id === id);
+      if (j) j.client_name = store.clients.find((c) => c.id === j.client_id)?.name;
+      return j;
+    },
+    insert(data: Partial<JobRow>): JobRow {
+      const row: JobRow = {
+        id: store.next_ids.jobs++, company_id: data.company_id || 1,
+        client_id: data.client_id || 0, estimate_id: data.estimate_id || null,
+        invoice_id: data.invoice_id || null, name: data.name || '',
+        description: data.description || '', status: 'scheduled',
+        priority: data.priority || 'normal', start_date: data.start_date || '',
+        end_date: data.end_date || '', assigned_crew: data.assigned_crew || '',
+        job_site_address: data.job_site_address || '',
+        glass_types: data.glass_types || '', total_sq_ft: data.total_sq_ft || 0,
+        total_linear_ft: data.total_linear_ft || 0, door_count: data.door_count || 0,
+        notes: data.notes || '', created_at: now(), updated_at: now(),
+      };
+      store.jobs.push(row); saveStore(); return row;
+    },
+    update(id: number, data: Partial<JobRow>): JobRow | null {
+      const idx = store.jobs.findIndex((j) => j.id === id);
+      if (idx === -1) return null;
+      store.jobs[idx] = { ...store.jobs[idx], ...data, id, updated_at: now() };
+      saveStore(); return store.jobs[idx];
+    },
+    delete(id: number): boolean {
+      const idx = store.jobs.findIndex((j) => j.id === id);
+      if (idx === -1) return false;
+      store.jobs.splice(idx, 1); saveStore(); return true;
     },
   },
 
