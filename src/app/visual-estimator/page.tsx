@@ -1,504 +1,438 @@
-'use client'; import { useEffect, useRef, useState, useCallback } from 'react';
+'use client';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+/* ============================ DATA ============================ */
+type Sys = { name: string; note: string; psf: number; frame: number; mull: number; glassTint: string; framed: boolean; color: string };
+const SYSTEMS: Record<string, Sys> = {
+  frameless:  { name: 'Frameless All-Glass', note: '1/2" glass', psf: 85,  frame: 0.06, mull: 0.06, glassTint: '#cfe6ea', framed: false, color: '#3b82f6' },
+  framed:     { name: 'Aluminum Framed',      note: '1/4" glass', psf: 55,  frame: 0.16, mull: 0.14, glassTint: '#d3e6ec', framed: true,  color: '#64748b' },
+  storefront: { name: 'Storefront',           note: '1" IGU',     psf: 95,  frame: 0.17, mull: 0.17, glassTint: '#cfe1ea', framed: true,  color: '#1e40af' },
+  floorceil:  { name: 'Floor-to-Ceiling',     note: 'demountable', psf: 75, frame: 0.22, mull: 0.20, glassTint: '#d6e8ee', framed: true,  color: '#7c3aed' },
+  curtain:    { name: 'Curtain Wall',         note: '2.5" system', psf: 120, frame: 0.25, mull: 0.22, glassTint: '#cadfe8', framed: true,  color: '#0891b2' },
+};
+type Fin = { name: string; face: string; edge: string; dark: string };
+const FINISHES: Record<string, Fin> = {
+  silver: { name: 'Clear Anodized', face: '#c7ccd2', edge: '#eef1f4', dark: '#8f969e' },
+  bronze: { name: 'Dark Bronze',    face: '#5b4f42', edge: '#82755f', dark: '#3a3226' },
+  black:  { name: 'Matte Black',    face: '#26292d', edge: '#484c52', dark: '#111316' },
+  white:  { name: 'White',          face: '#e9ecef', edge: '#ffffff', dark: '#b9bfc6' },
+};
+type Door = { name: string; adder: number; leaves: number; kind?: 'swing' | 'slide' | 'pivot' | 'barn' };
+const DOORS: Record<string, Door> = {
+  none:   { name: 'None', adder: 0, leaves: 0 },
+  swing1: { name: 'Single Swing', adder: 2800, leaves: 1, kind: 'swing' },
+  swing2: { name: 'Double Swing', adder: 4800, leaves: 2, kind: 'swing' },
+  slide1: { name: 'Single Slider', adder: 3200, leaves: 1, kind: 'slide' },
+  slide2: { name: 'Center Slider', adder: 4600, leaves: 2, kind: 'slide' },
+  pivot:  { name: 'Pivot', adder: 5200, leaves: 1, kind: 'pivot' },
+  barn:   { name: 'Barn', adder: 3000, leaves: 1, kind: 'barn' },
+};
+
 interface Client { id: number; name: string; }
-interface WallSeg { id: number; x1: number; y1: number; x2: number; y2: number; style: string; lengthFt: number; }
-interface DoorSeg { id: number; x: number; y: number; width: number; height: number; type: string; }
+type Pt = { x: number; y: number };
+interface Run { system: string; finish: string; door: string; leafFt: number; doorPos: 'left' | 'center' | 'right'; transom: boolean; transomFt: number; sidelites: boolean; panels: number; }
+const newRun = (system = 'storefront', door = 'none'): Run => ({ system, finish: 'silver', door, leafFt: 3, doorPos: 'center', transom: false, transomFt: 1.5, sidelites: true, panels: 1 });
 
-const WALL_STYLES = [
-  { id: 'frameless-half', name: '1/2" Frameless Glass', color: '#3b82f6', priceFt: 85, glass: '1/2"', frame: 'U-Channel' },
-  { id: 'framed', name: 'Framed Glass Partition', color: '#94a3b8', priceFt: 55, glass: '1/4"', frame: 'Aluminum Frame' },
-  { id: 'storefront', name: 'Storefront System', color: '#1e40af', priceFt: 95, glass: '1/4"', frame: 'Storefront' },
-  { id: 'sheetrock', name: 'Sheetrock Wall', color: '#78716c', priceFt: 25, glass: 'N/A', frame: 'Metal Stud' },
-  { id: 'floor-ceiling', name: 'Floor-to-Ceiling', color: '#7c3aed', priceFt: 95, glass: '1/2"', frame: 'Base Shoe' },
-];
+function preset(kind: string): { pts: Pt[]; runs: Run[] } {
+  if (kind === 'flat') return { pts: [{ x: 0, y: 0 }, { x: 24, y: 0 }], runs: [newRun('storefront', 'swing2')] };
+  if (kind === 'L') return { pts: [{ x: 0, y: 0 }, { x: 14, y: 0 }, { x: 14, y: -10 }], runs: [newRun('frameless', 'swing1'), newRun('frameless', 'none')] };
+  return { pts: [{ x: 0, y: -10 }, { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: -10 }], runs: [newRun('framed', 'none'), newRun('storefront', 'swing2'), newRun('framed', 'none')] };
+}
 
-const DOOR_TYPES = [
-  { id: 'single-swing', name: 'Single Swing Door', price: 2800, width: 3, icon: '🚪' },
-  { id: 'double-swing', name: 'Double Swing Door', price: 4800, width: 6, icon: '🚪🚪' },
-  { id: 'sliding', name: 'Sliding Door', price: 4200, width: 4, icon: '🪟' },
-];
+/* ============================ DRAW HELPERS ============================ */
+function hexA(hex: string, a: number) { const c = hex.replace('#', ''); const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16); return `rgba(${r},${g},${b},${a})`; }
+function shade(hex: string, p: number) { const c = hex.replace('#', ''); let r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16); r = Math.max(0, Math.min(255, r + p)); g = Math.max(0, Math.min(255, g + p)); b = Math.max(0, Math.min(255, b + p)); return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''); }
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+const dist = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
+function fmtFt(n: number) { const f = Math.floor(n); const inch = Math.round((n - f) * 12); return inch ? `${f}'-${inch}"` : `${f}'-0"`; }
 
-const GLASS_BLOCKS = [
-  { name: '3ft Panel', wall: { x1:0,y1:0,x2:60,y2:0 }, style: 'frameless-half', label: '3\'' },
-  { name: '5ft Panel', wall: { x1:0,y1:0,x2:100,y2:0 }, style: 'frameless-half', label: '5\'' },
-  { name: '3ft + Door', walls: [{ x1:0,y1:0,x2:30,y2:0,style:'frameless-half' },{ x1:90,y1:0,x2:120,y2:0,style:'frameless-half' }], door: { type:'single-swing',x:30,y:0,width:60,height:15 }, label: '3\'+🚪' },
-  { name: '5ft Storefront', wall: { x1:0,y1:0,x2:100,y2:0 }, style: 'storefront', label: '5\' SF' },
-  { name: 'Corner L', walls: [{ x1:0,y1:0,x2:80,y2:0,style:'framed' },{ x1:80,y1:0,x2:80,y2:-80,style:'framed' }], label: 'L 4\'' },
-  { name: '8ft Wall', wall: { x1:0,y1:0,x2:160,y2:0 }, style: 'framed', label: '8\'' },
-];
+function drawAssembly(ctx: CanvasRenderingContext2D, ox: number, oy: number, W: number, H: number, transparentGlass: boolean, run: Run, wFt: number, hFt: number) {
+  const sys = SYSTEMS[run.system], fin = FINISHES[run.finish];
+  const ftToPx = W / wFt;
+  const frameT = Math.max(3, sys.frame * ftToPx), mullT = Math.max(3, sys.mull * ftToPx);
+  const glassCol = sys.glassTint;
+  let bodyY = oy, bodyH = H, transomH = 0;
+  if (run.transom) { transomH = Math.min(H * 0.4, run.transomFt * ftToPx); bodyY = oy + transomH; bodyH = H - transomH; }
+  const door = DOORS[run.door], hasDoor = door.leaves > 0;
+  const doorW = hasDoor ? run.leafFt * ftToPx * door.leaves : 0;
+  type Bay = { x: number; w: number; type: 'fixed' | 'door'; panels?: number };
+  const bays: Bay[] = [];
+  if (!hasDoor) bays.push({ x: ox, w: W, type: 'fixed', panels: run.panels * (run.sidelites ? 2 : 1) });
+  else {
+    let leftW = 0, rightW = 0, dx = ox; const remain = Math.max(0, W - doorW);
+    if (run.doorPos === 'center') { leftW = remain / 2; rightW = remain / 2; } else if (run.doorPos === 'left') { rightW = remain; } else { leftW = remain; }
+    if (leftW > 2) { bays.push({ x: dx, w: leftW, type: 'fixed', panels: run.panels }); dx += leftW; }
+    bays.push({ x: dx, w: doorW, type: 'door' }); dx += doorW;
+    if (rightW > 2) bays.push({ x: dx, w: rightW, type: 'fixed', panels: run.panels });
+  }
+  function glassFill(x: number, y: number, w: number, h: number) {
+    if (w <= 0 || h <= 0) return;
+    const g = ctx.createLinearGradient(x, y, x + w, y + h);
+    // stronger tint on photo so the glass reads as real glass (was washing out)
+    const a1 = transparentGlass ? 0.55 : 0.85, a2 = transparentGlass ? 0.74 : 0.95;
+    g.addColorStop(0, hexA(glassCol, a2)); g.addColorStop(0.42, hexA('#f4fcff', transparentGlass ? 0.5 : 0.7));
+    g.addColorStop(0.58, hexA(glassCol, a1)); g.addColorStop(1, hexA(shade(glassCol, -30), transparentGlass ? 0.8 : 0.9));
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    // bright specular streaks (crisper on photo)
+    ctx.globalAlpha = transparentGlass ? 0.4 : 0.24; ctx.fillStyle = '#ffffff'; const sw = w * 0.5;
+    ctx.beginPath(); ctx.moveTo(x + w * 0.05, y + h); ctx.lineTo(x + w * 0.05 + sw * 0.4, y); ctx.lineTo(x + w * 0.16 + sw * 0.4, y); ctx.lineTo(x + w * 0.16, y + h); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = transparentGlass ? 0.22 : 0.14;
+    ctx.beginPath(); ctx.moveTo(x + w * 0.5, y + h); ctx.lineTo(x + w * 0.5 + sw * 0.3, y); ctx.lineTo(x + w * 0.57 + sw * 0.3, y); ctx.lineTo(x + w * 0.57, y + h); ctx.closePath(); ctx.fill();
+    // inner edge shadow for depth (glass set into frame)
+    ctx.globalAlpha = 1; const es = Math.max(3, Math.min(w, h) * 0.03);
+    const eg = ctx.createLinearGradient(x, y, x, y + es); eg.addColorStop(0, hexA('#0b1a2e', transparentGlass ? 0.35 : 0.28)); eg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = eg; ctx.fillRect(x, y, w, es);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+  function bar(x: number, y: number, w: number, h: number, vertical: boolean) {
+    if (w <= 0 || h <= 0) return;
+    const g = vertical ? ctx.createLinearGradient(x, 0, x + w, 0) : ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, fin.dark); g.addColorStop(0.5, fin.face); g.addColorStop(0.5, fin.edge); g.addColorStop(1, fin.dark);
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = hexA('#ffffff', 0.25); if (vertical) ctx.fillRect(x, y, Math.max(1, w * 0.18), h); else ctx.fillRect(x, y, w, Math.max(1, h * 0.18));
+  }
+  function drawFixed(b: Bay, y: number, h: number) { glassFill(b.x, y, b.w, h); const n = Math.max(1, b.panels || 1); for (let i = 1; i < n; i++) { const mx = b.x + b.w * i / n - mullT / 2; bar(mx, y, mullT, h, true); } }
+  function drawDoor(x: number, y: number, w: number, h: number) {
+    const kind = door.kind, leaves = door.leaves, lw = w / leaves;
+    if (kind === 'barn') bar(x - 6, y - mullT * 1.4, w + 12, mullT * 1.4, false);
+    for (let i = 0; i < leaves; i++) {
+      const lx = x + i * lw; glassFill(lx + 2, y, lw - 4, h);
+      if (sys.framed || kind === 'swing' || kind === 'pivot') {
+        const st = Math.max(4, frameT * 0.9), rail = Math.max(6, frameT * 1.4), brail = Math.max(10, frameT * 2.4);
+        bar(lx + 2, y, st, h, true); bar(lx + lw - 2 - st, y, st, h, true);
+        bar(lx + 2, y, lw - 4, rail, false); bar(lx + 2, y + h - brail, lw - 4, brail, false);
+      }
+      if (kind === 'swing' || kind === 'pivot') {
+        const pullX = (leaves === 2) ? (i === 0 ? lx + lw - 14 : lx + 8) : lx + lw - 16;
+        ctx.fillStyle = fin.face; roundRect(ctx, pullX, y + h * 0.4, 6, h * 0.22, 3); ctx.fill();
+        ctx.fillStyle = fin.edge; ctx.fillRect(pullX + 1, y + h * 0.4, 2, h * 0.22);
+        if (kind === 'pivot') { ctx.fillStyle = fin.dark; ctx.beginPath(); ctx.arc(lx + lw * 0.16, y + h - 6, 5, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(lx + lw * 0.16, y + 8, 5, 0, 7); ctx.fill(); }
+      }
+      if (kind === 'slide') {
+        const px = (leaves === 2) ? (i === 0 ? lx + lw - 16 : lx + 10) : lx + lw * 0.5 - 3;
+        ctx.fillStyle = fin.face; roundRect(ctx, px, y + h * 0.42, 6, h * 0.18, 3); ctx.fill();
+        ctx.strokeStyle = hexA('#0e2038', 0.55); ctx.lineWidth = 2; const ay = y + h * 0.5, dir = (leaves === 2) ? (i === 0 ? -1 : 1) : 1;
+        ctx.beginPath(); ctx.moveTo(lx + lw * 0.5 - 12 * dir, ay); ctx.lineTo(lx + lw * 0.5 + 12 * dir, ay); ctx.moveTo(lx + lw * 0.5 + 12 * dir, ay); ctx.lineTo(lx + lw * 0.5 + 4 * dir, ay - 5); ctx.moveTo(lx + lw * 0.5 + 12 * dir, ay); ctx.lineTo(lx + lw * 0.5 + 4 * dir, ay + 5); ctx.stroke();
+      }
+      if (kind === 'barn') { ctx.fillStyle = fin.dark; ctx.fillRect(lx + lw * 0.2 - 4, y - mullT * 1.2, 8, mullT * 1.2); ctx.fillRect(lx + lw * 0.8 - 4, y - mullT * 1.2, 8, mullT * 1.2); ctx.fillStyle = fin.face; ctx.fillRect(lx + lw * 0.5 - 3, y + h * 0.42, 6, h * 0.16); }
+    }
+    if (kind === 'swing' && leaves === 2) { ctx.fillStyle = fin.dark; ctx.fillRect(x + w / 2 - 2, y, 4, h); }
+  }
+  if (run.transom && transomH > 4) {
+    for (const b of bays) { glassFill(b.x, oy, b.w, transomH); if (b.type === 'fixed') { const n = Math.max(1, b.panels || 1); for (let i = 1; i < n; i++) { const mx = b.x + b.w * i / n - mullT / 2; bar(mx, oy, mullT, transomH, true); } } }
+    if (sys.framed) bar(ox, oy + transomH - mullT / 2, W, mullT, false);
+  }
+  for (const b of bays) { if (b.type === 'fixed') drawFixed(b, bodyY, bodyH); else drawDoor(b.x, bodyY, b.w, bodyH); }
+  if (sys.framed) {
+    bar(ox, oy, W, frameT, false); bar(ox, oy + H - frameT, W, frameT, false); bar(ox, oy, frameT, H, true); bar(ox + W - frameT, oy, frameT, H, true);
+    for (let i = 1; i < bays.length; i++) { const mx = bays[i].x - mullT / 2; bar(mx, oy, mullT, H, true); }
+  } else {
+    bar(ox, oy, W, Math.max(4, frameT), false); bar(ox, oy + H - Math.max(4, frameT), W, Math.max(4, frameT), false);
+    for (let i = 1; i < bays.length; i++) { if (bays[i].type !== 'door' && bays[i - 1].type !== 'door') { const jx = bays[i].x - 1; ctx.fillStyle = hexA('#5b6b82', 0.5); ctx.fillRect(jx, oy, 2, H); } }
+  }
+  ctx.fillStyle = '#cdd9ee'; ctx.font = `600 ${Math.max(11, W * 0.014)}px -apple-system,sans-serif`; ctx.textAlign = 'center';
+  ctx.fillText(fmtFt(wFt), ox + W / 2, oy + H + Math.max(20, H * 0.05));
+  ctx.save(); ctx.translate(ox - Math.max(14, W * 0.02), oy + H / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(fmtFt(hFt), 0, 0); ctx.restore();
+  ctx.textAlign = 'start';
+}
 
-const TEMPLATES = [
-  { name: '20ft Storefront', walls: [{ x1: 50, y1: 300, x2: 650, y2: 300, style: 'storefront' }], doors: [{ x: 250, y: 300, width: 200, height: 20, type: 'double-swing' }] },
-  { name: 'Office Partition', walls: [{ x1: 50, y1: 200, x2: 350, y2: 200, style: 'frameless-half' }, { x1: 350, y1: 200, x2: 350, y2: 400, style: 'frameless-half' }], doors: [{ x: 175, y: 200, width: 60, height: 15, type: 'single-swing' }] },
-  { name: 'L-Shape Glass Wall', walls: [{ x1: 100, y1: 150, x2: 500, y2: 150, style: 'framed' }, { x1: 500, y1: 150, x2: 500, y2: 400, style: 'framed' }], doors: [{ x: 250, y: 150, width: 60, height: 15, type: 'single-swing' }] },
-  { name: 'Empty Canvas', walls: [], doors: [] },
-];
+function planTransform(pts: Pt[], cw: number, ch: number) {
+  const pad = 70; const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
+  const wft = Math.max(1, maxx - minx), hft = Math.max(1, maxy - miny);
+  const scale = Math.min((cw - pad * 2) / wft, (ch - pad * 2) / hft, 26);
+  const ox = (cw - wft * scale) / 2 - minx * scale; const oy = (ch - hft * scale) / 2 + maxy * scale;
+  return { scale, toPx: (p: Pt) => ({ x: ox + p.x * scale, y: oy - p.y * scale }), toFt: (x: number, y: number) => ({ x: (x - ox) / scale, y: (oy - y) / scale }) };
+}
+function drawPlan(ctx: CanvasRenderingContext2D, cw: number, ch: number, pts: Pt[], runs: Run[], sel: number, title: string) {
+  ctx.fillStyle = '#0e1828'; ctx.fillRect(0, 0, cw, ch);
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
+  for (let i = 0; i < cw; i += 28) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, ch); ctx.stroke(); }
+  for (let i = 0; i < ch; i += 28) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(cw, i); ctx.stroke(); }
+  ctx.fillStyle = '#cdd9ee'; ctx.font = '600 15px -apple-system,sans-serif'; ctx.fillText(title || 'Floor Plan', 18, 28);
+  ctx.fillStyle = '#7f90ad'; ctx.font = '11px -apple-system,sans-serif'; ctx.fillText('Top-down view', 18, 46);
+  if (pts.length < 2) { ctx.fillStyle = '#64748b'; ctx.font = '13px -apple-system,sans-serif'; ctx.fillText('Tap points to draw the enclosure…', cw / 2 - 100, ch / 2); if (pts.length === 1) { const t = planTransform([pts[0], { x: pts[0].x + 1, y: pts[0].y }], cw, ch); const q = t.toPx(pts[0]); ctx.fillStyle = '#2563eb'; ctx.beginPath(); ctx.arc(q.x, q.y, 6, 0, 7); ctx.fill(); } return; }
+  const t = planTransform(pts, cw, ch);
+  // enclosure interior (centroid of corners, in px) — swings & labels orient off this
+  const cxs = pts.map(p => t.toPx(p)); const cen = { x: cxs.reduce((s, p) => s + p.x, 0) / cxs.length, y: cxs.reduce((s, p) => s + p.y, 0) / cxs.length };
+  const drawArc = (h: Pt, r: number, s: number, e: number) => { const d = Math.atan2(Math.sin(e - s), Math.cos(e - s)); ctx.beginPath(); for (let k = 0; k <= 14; k++) { const ang = s + d * k / 14; const px = h.x + Math.cos(ang) * r, py = h.y + Math.sin(ang) * r; k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke(); };
+  for (let i = 0; i < pts.length - 1; i++) {
+    const run = runs[i] || newRun(); const a = t.toPx(pts[i]), b = t.toPx(pts[i + 1]);
+    const sys = SYSTEMS[run.system]; const door = DOORS[run.door];
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1; const ux = dx / len, uy = dy / len;
+    let nx = -uy, ny = ux; // flip normal to point INTO the enclosure interior
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; if ((cen.x - mid.x) * nx + (cen.y - mid.y) * ny < 0) { nx = -nx; ny = -ny; }
+    const wallW = sel === i ? 13 : 10;
+    const runFt = dist(pts[i], pts[i + 1]); const doorFt = door.leaves > 0 ? run.leafFt * door.leaves : 0;
+    let gapC = 0.5; if (run.doorPos === 'left') gapC = Math.min(0.5, doorFt / runFt / 2 + 0.04); if (run.doorPos === 'right') gapC = Math.max(0.5, 1 - doorFt / runFt / 2 - 0.04);
+    const gapHalf = door.leaves > 0 ? (doorFt / runFt) / 2 : 0;
+    ctx.strokeStyle = sys.color; ctx.lineCap = 'butt'; ctx.lineWidth = wallW;
+    if (door.leaves > 0 && gapHalf > 0.01 && gapHalf < 0.48) {
+      const g0 = gapC - gapHalf, g1 = gapC + gapHalf;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + dx * g0, a.y + dy * g0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x + dx * g1, a.y + dy * g1); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const leafPx = (2 * gapHalf) * len / door.leaves; const nAng = Math.atan2(ny, nx);
+      ctx.strokeStyle = hexA(sys.color, 0.85); ctx.lineWidth = 1.6; ctx.setLineDash([5, 4]);
+      if (door.kind === 'swing' || door.kind === 'pivot') {
+        // hinge each leaf at its jamb; leaves swing into the room to meet at center
+        const jambs = door.leaves === 2 ? [{ f: g0, close: Math.atan2(uy, ux) }, { f: g1, close: Math.atan2(-uy, -ux) }] : [{ f: g0, close: Math.atan2(uy, ux) }];
+        for (const j of jambs) { const h = { x: a.x + dx * j.f, y: a.y + dy * j.f }; ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(h.x + nx * leafPx, h.y + ny * leafPx); ctx.stroke(); drawArc(h, leafPx, j.close, nAng); }
+      } else { ctx.beginPath(); ctx.moveTo(a.x + dx * g0 + nx * 3.5, a.y + dy * g0 + ny * 3.5); ctx.lineTo(a.x + dx * g1 + nx * 3.5, a.y + dy * g1 + ny * 3.5); ctx.stroke(); }
+      ctx.setLineDash([]);
+    } else { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+    const mx = (a.x + b.x) / 2 - nx * 22, my = (a.y + b.y) / 2 - ny * 22; // label on the outside
+    ctx.fillStyle = '#e8eefb'; ctx.font = '600 12px -apple-system,sans-serif'; ctx.textAlign = 'center'; ctx.fillText(fmtFt(runFt), mx, my); ctx.textAlign = 'start';
+    if (sel === i) { ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(a.x - nx * 10, a.y - ny * 10); ctx.lineTo(b.x - nx * 10, b.y - ny * 10); ctx.stroke(); ctx.setLineDash([]); }
+  }
+  for (const p of pts) { const q = t.toPx(p); ctx.fillStyle = '#0e1828'; ctx.strokeStyle = '#93a4c2'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, 7); ctx.fill(); ctx.stroke(); }
+  const used = Array.from(new Set(runs.map(r => r.system)));
+  const ly = ch - 14 - used.length * 16;
+  ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(14, ly - 16, 152, used.length * 16 + 22);
+  ctx.fillStyle = '#93a4c2'; ctx.font = '600 10px -apple-system,sans-serif'; ctx.fillText('SYSTEMS', 22, ly - 2);
+  used.forEach((s, i) => { ctx.fillStyle = SYSTEMS[s].color; ctx.fillRect(22, ly + i * 16 + 4, 14, 5); ctx.fillStyle = '#cdd9ee'; ctx.font = '10px -apple-system,sans-serif'; ctx.fillText(SYSTEMS[s].name, 42, ly + i * 16 + 10); });
+}
+
+function solve(A: number[][], b: number[]) { const n = b.length; for (let i = 0; i < n; i++) { let p = i; for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r;[A[i], A[p]] = [A[p], A[i]];[b[i], b[p]] = [b[p], b[i]]; const d = A[i][i] || 1e-9; for (let r = 0; r < n; r++) { if (r === i) continue; const f = A[r][i] / d; for (let c = i; c < n; c++) A[r][c] -= f * A[i][c]; b[r] -= f * b[i]; } } return b.map((v, i) => v / (A[i][i] || 1e-9)); }
+function homography(dst: Pt[]) { const pts = [[0, 0], [1, 0], [1, 1], [0, 1]]; const A: number[][] = [], b: number[] = []; for (let i = 0; i < 4; i++) { const [u, v] = pts[i], { x, y } = dst[i]; A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x); A.push([0, 0, 0, u, v, 1, -u * y, -v * y]); b.push(y); } return solve(A, b); }
+function project(h: number[], u: number, v: number) { const den = h[6] * u + h[7] * v + 1; return { x: (h[0] * u + h[1] * v + h[2]) / den, y: (h[3] * u + h[4] * v + h[5]) / den }; }
+function tri(ctx: CanvasRenderingContext2D, img: HTMLCanvasElement, s0: Pt, s1: Pt, s2: Pt, d0: Pt, d1: Pt, d2: Pt) {
+  ctx.save(); ctx.beginPath(); ctx.moveTo(d0.x, d0.y); ctx.lineTo(d1.x, d1.y); ctx.lineTo(d2.x, d2.y); ctx.closePath(); ctx.clip();
+  const denom = s0.x * (s2.y - s1.y) + s1.x * (s0.y - s2.y) + s2.x * (s1.y - s0.y); if (Math.abs(denom) < 1e-6) { ctx.restore(); return; }
+  const m11 = -(s0.y * (d2.x - d1.x) - s1.y * d2.x + s2.y * d1.x + (s1.y - s2.y) * d0.x) / denom;
+  const m12 = (s1.y * d2.y + s0.y * (d1.y - d2.y) - s2.y * d1.y + (s2.y - s1.y) * d0.y) / denom;
+  const m21 = (s0.x * (d2.x - d1.x) - s1.x * d2.x + s2.x * d1.x + (s1.x - s2.x) * d0.x) / denom;
+  const m22 = -(s1.x * d2.y + s0.x * (d1.y - d2.y) - s2.x * d1.y + (s2.x - s1.x) * d0.y) / denom;
+  const dx = (s0.x * (s2.y * d1.x - s1.y * d2.x) + s0.y * (s1.x * d2.x - s2.x * d1.x) + (s2.x * s1.y - s1.x * s2.y) * d0.x) / denom;
+  const dy = (s0.x * (s2.y * d1.y - s1.y * d2.y) + s0.y * (s1.x * d2.y - s2.x * d1.y) + (s2.x * s1.y - s1.x * s2.y) * d0.y) / denom;
+  ctx.transform(m11, m12, m21, m22, dx, dy); ctx.drawImage(img, 0, 0); ctx.restore();
+}
+function warp(ctx: CanvasRenderingContext2D, src: HTMLCanvasElement, corners: Pt[]) { const h = homography(corners); const N = 28, sw = src.width, sh = src.height; for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const u0 = i / N, u1 = (i + 1) / N, v0 = j / N, v1 = (j + 1) / N; const s = [{ x: u0 * sw, y: v0 * sh }, { x: u1 * sw, y: v0 * sh }, { x: u1 * sw, y: v1 * sh }, { x: u0 * sw, y: v1 * sh }]; const d = [project(h, u0, v0), project(h, u1, v0), project(h, u1, v1), project(h, u0, v1)]; tri(ctx, src, s[0], s[1], s[2], d[0], d[1], d[2]); tri(ctx, src, s[0], s[2], s[3], d[0], d[2], d[3]); } }
+function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, cw: number, ch: number) { const ir = img.width / img.height, cr = cw / ch; let dw, dh, dx, dy; if (ir > cr) { dh = ch; dw = ch * ir; dx = (cw - dw) / 2; dy = 0; } else { dw = cw; dh = cw / ir; dx = 0; dy = (ch - dh) / 2; } ctx.drawImage(img, dx, dy, dw, dh); }
+
+/* ============================ PAGE ============================ */
+const money = (n: number) => '$' + Math.round(n).toLocaleString();
 
 export default function VisualEstimatorPage() {
   const router = useRouter();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const vizRef = useRef<HTMLCanvasElement>(null);
-
-  // Client info
+  const cvRef = useRef<HTMLCanvasElement>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [clientId, setClientId] = useState('');
   const [projectName, setProjectName] = useState('');
-  const [projectNotes, setProjectNotes] = useState('');
-  const [showViz, setShowViz] = useState(false);
-
-  // Canvas
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [walls, setWalls] = useState<WallSeg[]>([]);
-  const [doors, setDoors] = useState<DoorSeg[]>([]);
-  const [activeStyle, setActiveStyle] = useState('frameless-half');
-  const [activeTool, setActiveTool] = useState<'draw'|'line'|'door'|'erase'>('line');
-  const [drawing, setDrawing] = useState<{pts: {x:number;y:number}[]} | null>(null);
-  const [cursor, setCursor] = useState<{x:number;y:number}|null>(null);
-  const [scaleMode, setScaleMode] = useState(false);
-  const [scaleP1, setScaleP1] = useState<{x:number;y:number}|null>(null);
-  const [scaleP2, setScaleP2] = useState<{x:number;y:number}|null>(null);
-  const [pxPerFt, setPxPerFt] = useState(0);
-  const [photoOpacity, setPhotoOpacity] = useState(70);
+  const [heightFt, setHeightFt] = useState(9);
+  const [pts, setPts] = useState<Pt[]>(preset('flat').pts);
+  const [runs, setRuns] = useState<Run[]>(preset('flat').runs);
+  const [sel, setSel] = useState(0);
+  const [view, setView] = useState<'plan' | 'elev' | 'photo'>('plan');
+  const [drawMode, setDrawMode] = useState(false);
+  const [photo, setPhoto] = useState<HTMLImageElement | null>(null);
+  const [corners, setCorners] = useState<Pt[] | null>(null);
+  const [placing, setPlacing] = useState(false);
+  const [tmp, setTmp] = useState<Pt[]>([]);
+  const [psfMap, setPsfMap] = useState<Record<string, number>>(Object.fromEntries(Object.entries(SYSTEMS).map(([k, v]) => [k, v.psf])));
+  const [laborPsf, setLaborPsf] = useState(14);
+  const [taxPct, setTaxPct] = useState(8.25);
   const [saving, setSaving] = useState(false);
-  const renderRef = useRef<HTMLCanvasElement>(null);
-  const [showRender, setShowRender] = useState(false);
 
-  // Load clients
-  useEffect(() => { fetch('/api/clients').then(r=>r.json()).then(d=>{if(Array.isArray(d))setClients(d)}).catch(()=>{}); }, []);
+  useEffect(() => { fetch('/api/clients').then(r => r.json()).then(d => { if (Array.isArray(d)) setClients(d); }).catch(() => {}); }, []);
 
-  const getCoords = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    const c = canvasRef.current; if (!c) return {x:0,y:0};
-    const r = c.getBoundingClientRect();
-    return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) };
-  }, []);
+  const run = runs[sel] || newRun();
+  const setRun = (patch: Partial<Run>) => setRuns(rs => rs.map((r, i) => i === sel ? { ...r, ...patch } : r));
+  const applyPreset = (k: string) => { const p = preset(k); setPts(p.pts); setRuns(p.runs); setSel(0); setDrawMode(false); setView('plan'); };
+  const runLen = (i: number) => (pts[i] && pts[i + 1]) ? dist(pts[i], pts[i + 1]) : 0;
+  const setRunLen = (i: number, L: number) => { setPts(ps => { const a = ps[i], b = ps[i + 1]; if (!a || !b) return ps; const d = dist(a, b) || 1; const ux = (b.x - a.x) / d, uy = (b.y - a.y) / d; const delta = L - d; return ps.map((p, j) => j > i ? { x: p.x + ux * delta, y: p.y + uy * delta } : p); }); };
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => { const img = new Image(); img.onload = () => { const c = canvasRef.current; if (c) { c.width = Math.min(img.width, 800); c.height = (img.height/img.width)*c.width; } setPhoto(reader.result as string); }; img.src = reader.result as string; };
-    reader.readAsDataURL(f);
-  };
-
-  const applyTemplate = (t: typeof TEMPLATES[0]) => {
-    setWalls(t.walls.map(w=>({...w, id: Date.now()+Math.random(), lengthFt:0})));
-    setDoors(t.doors.map(d=>({...d, id: Date.now()+Math.random()*2})));
-    setPhoto(null);
-  };
-
-  // Pointer (touch + mouse) handlers
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    const {x,y} = getCoords(e);
-    if (scaleMode) {
-      if (!scaleP1) { setScaleP1({x,y}); setScaleP2(null); return; }
-      setScaleP2({x,y});
-      const px = Math.sqrt((x-scaleP1.x)**2 + (y-scaleP1.y)**2);
-      const ft = parseFloat(prompt('Line length in feet?','10')||'0');
-      if (ft>0) setPxPerFt(px/ft);
-      setScaleMode(false); setScaleP1(null); setScaleP2(null); return;
-    }
-    if (activeTool === 'draw') setDrawing({pts:[{x,y}]});
-    if (activeTool === 'line') setDrawing({pts:[{x,y}]});
-    if (activeTool === 'door') {
-      const dType = DOOR_TYPES[0].id;
-      const wPx = DOOR_TYPES[0].width * (pxPerFt || 20);
-      setDoors([...doors, { id: Date.now(), x: x-wPx/2, y: y, width: wPx, height: 15, type: dType }]);
-    }
-    if (activeTool === 'erase') {
-      const nearWall = walls.find(w=>Math.sqrt(((w.x1+w.x2)/2-x)**2+((w.y1+w.y2)/2-y)**2)<25);
-      if (nearWall) setWalls(walls.filter(w=>w.id!==nearWall.id));
-      const nearDoor = doors.find(d=>Math.sqrt((d.x-x)**2+(d.y-y)**2)<30);
-      if (nearDoor) setDoors(doors.filter(d=>d.id!==nearDoor.id));
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const {x,y} = getCoords(e); setCursor({x,y});
-    if (scaleMode && scaleP1) setScaleP2({x,y});
-    if (drawing) setDrawing({pts:[...drawing.pts,{x,y}]});
-  };
-
-  const handlePointerUp = () => {
-    if (!drawing || drawing.pts.length < 3) { setDrawing(null); return; }
-    if (activeTool === 'line') {
-      const p1 = drawing.pts[0], p2 = drawing.pts[drawing.pts.length-1];
-      const dist = Math.sqrt((p2.x-p1.x)**2+(p2.y-p1.y)**2);
-      if (dist<10) { setDrawing(null); return; }
-      const len = pxPerFt>0 ? Math.round(dist/pxPerFt*100)/100 : 0;
-      setWalls([...walls, { id: Date.now(), x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y, style:activeStyle, lengthFt:len }]);
-    }
-    if (activeTool === 'draw') {
-      // Simplify freehand to line segments
-      const pts = drawing.pts;
-      let lastPt = pts[0];
-      for (let i=10; i<pts.length; i+=10) {
-        const dist = Math.sqrt((pts[i].x-lastPt.x)**2+(pts[i].y-lastPt.y)**2);
-        if (dist>15) {
-          const len = pxPerFt>0 ? Math.round(dist/pxPerFt*100)/100 : 0;
-          setWalls(prev=>[...prev, { id: Date.now()+i, x1:lastPt.x, y1:lastPt.y, x2:pts[i].x, y2:pts[i].y, style:activeStyle, lengthFt:len }]);
-          lastPt = pts[i];
-        }
+  useEffect(() => {
+    const cv = cvRef.current; if (!cv) return; const ctx = cv.getContext('2d'); if (!ctx) return;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    if (view === 'photo' && photo) {
+      drawCover(ctx, photo, cv.width, cv.height);
+      if (placing) {
+        ctx.fillStyle = '#2563eb'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+        tmp.forEach((p, i) => { ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText(String(i + 1), p.x - 3, p.y + 4); ctx.fillStyle = '#2563eb'; });
+        if (tmp.length > 1) { ctx.strokeStyle = '#2563eb'; ctx.beginPath(); ctx.moveTo(tmp[0].x, tmp[0].y); tmp.forEach(p => ctx.lineTo(p.x, p.y)); ctx.stroke(); }
+        return;
       }
+      if (corners && corners.length === 4) {
+        const wFt = runLen(sel) || 12; const asp = wFt / heightFt; const ew = 1000, eh = Math.max(1, Math.round(ew / asp));
+        // installed drop-shadow: cast the opening's footprint onto the wall so it sits in the scene
+        ctx.save(); ctx.filter = 'blur(7px)'; ctx.fillStyle = 'rgba(6,12,22,0.28)';
+        ctx.beginPath(); corners.forEach((c, i) => { const p = { x: c.x + 6, y: c.y + 9 }; i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); }); ctx.closePath(); ctx.fill(); ctx.restore();
+        const off = document.createElement('canvas'); off.width = ew; off.height = eh; const octx = off.getContext('2d')!;
+        drawAssembly(octx, ew * 0.02, eh * 0.02, ew * 0.96, eh * 0.96, true, run, wFt, heightFt);
+        warp(ctx, off, corners);
+      }
+      return;
     }
-    setDrawing(null);
-  };
+    if (view === 'plan') { drawPlan(ctx, cv.width, cv.height, pts, runs, sel, projectName); return; }
+    const g = ctx.createLinearGradient(0, 0, 0, cv.height);
+    g.addColorStop(0, '#1a2740'); g.addColorStop(0.7, '#131f34'); g.addColorStop(0.7, '#0e1828'); g.addColorStop(1, '#0a1220');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(0, cv.height * 0.72, cv.width, 2);
+    const wFt = runLen(sel) || 12; const asp = wFt / heightFt; let W = cv.width * 0.72, H = W / asp; const maxH = cv.height * 0.6;
+    if (H > maxH) { H = maxH; W = H * asp; }
+    const ox = (cv.width - W) / 2, oy = cv.height * 0.72 - H;
+    ctx.save(); ctx.filter = 'blur(8px)'; ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(ox + 8, oy + H - 4, W, 14); ctx.restore();
+    drawAssembly(ctx, ox, oy, W, H, false, run, wFt, heightFt);
+    ctx.fillStyle = '#7f90ad'; ctx.font = '12px -apple-system,sans-serif'; ctx.fillText(`Wall ${sel + 1} of ${runs.length} — ${SYSTEMS[run.system].name}`, 18, 26);
+  }, [pts, runs, sel, view, photo, corners, placing, tmp, heightFt, projectName]);
 
-  const removeWall = (id:number)=>setWalls(walls.filter(w=>w.id!==id));
-  const removeDoor = (id:number)=>setDoors(doors.filter(d=>d.id!==id));
-  const clearAll = ()=>{if(confirm('Clear all?')){setWalls([]);setDoors([]);setShowViz(false);}};
-
-  const dropBlock = (block: typeof GLASS_BLOCKS[0], clickX: number, clickY: number) => {
-    const px = pxPerFt || 20;
-    const style = ('style' in block) ? block.style : ((block as any).walls?.[0]?.style || 'frameless-half');
-    if ((block as any).wall && !(block as any).walls) {
-      const w = (block as any).wall;
-      const len = Math.abs((w.x2-w.x1)||60) * (px/20);
-      setWalls([...walls, { id: Date.now(), x1: clickX-w.x1, y1: clickY-w.y1, x2: clickX-w.x1+len, y2: clickY-w.y1, style, lengthFt: pxPerFt>0 ? Math.round(len/pxPerFt*100)/100 : 0 }]);
-    } else if ((block as any).walls) {
-      const newWalls = (block as any).walls.map((w:any) => {
-        const len = Math.abs((w.x2-w.x1)||60) * (px/20);
-        return { id: Date.now()+Math.random(), x1: clickX-w.x1, y1: clickY-w.y1, x2: clickX-w.x1+len, y2: clickY-w.y1, style: w.style||style, lengthFt: 0 };
-      });
-      setWalls([...walls, ...newWalls]);
-    }
-    if ((block as any).door) {
-      const d = (block as any).door;
-      setDoors(prev => [...prev, { id: Date.now()+Math.random(), x: clickX+d.x, y: clickY+d.y, width: d.width||60, height: d.height||15, type: d.type||'single-swing' }]);
+  const onPhoto = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { const img = new Image(); img.onload = () => { setPhoto(img); setCorners(null); setView('photo'); setPlacing(true); setTmp([]); }; img.src = r.result as string; }; r.readAsDataURL(f); };
+  const onCanvasDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const cv = cvRef.current!; const r = cv.getBoundingClientRect(); const x = (e.clientX - r.left) * (cv.width / r.width), y = (e.clientY - r.top) * (cv.height / r.height);
+    if (view === 'photo' && placing) { const next = [...tmp, { x, y }]; setTmp(next); if (next.length === 4) { setCorners(next); setPlacing(false); } return; }
+    if (view === 'plan' && drawMode) {
+      const base = pts.length >= 2 ? pts : (pts.length === 1 ? [pts[0], { x: pts[0].x + 10, y: pts[0].y }] : [{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+      const t = planTransform(base, cv.width, cv.height); const f = t.toFt(x, y); const snapped = { x: Math.round(f.x * 2) / 2, y: Math.round(f.y * 2) / 2 };
+      setPts(ps => [...ps, snapped]);
+      // after adding this point, wall count should be (new points - 1) = current pts.length
+      setRuns(rs => { const needed = pts.length; return rs.length >= needed ? rs : [...rs, ...Array(needed - rs.length).fill(0).map(() => newRun())]; });
     }
   };
+  const startDraw = () => { setDrawMode(true); setView('plan'); setPts([]); setRuns([]); setSel(0); };
+  const download = () => { const cv = cvRef.current!; const a = document.createElement('a'); a.download = `${projectName || 'glass'}-${view}.png`; a.href = cv.toDataURL('image/png'); a.click(); };
 
-  const exportFloorPlan = () => {
-    const c = vizRef.current; if (!c) return;
-    const link = document.createElement('a');
-    link.download = `${projectName||'floor-plan'}.png`;
-    link.href = c.toDataURL('image/png');
-    link.click();
-  };
+  let glass = 0, doorAdd = 0, area = 0;
+  runs.forEach((r, i) => { const a = runLen(i) * heightFt; area += a; glass += a * (psfMap[r.system] ?? SYSTEMS[r.system].psf); doorAdd += DOORS[r.door].adder; });
+  const labor = area * laborPsf; const sub = glass + doorAdd + labor; const tax = sub * taxPct / 100; const total = sub + tax;
+  const usedSystems = Array.from(new Set(runs.map(r => r.system)));
 
-  // Generate realistic finished render on photo
-  const generateRender = () => {
-    if (!photo) { alert('Upload a photo first.'); return; }
-    const c = renderRef.current; if (!c) return;
-    c.width = 800; c.height = 600; c.style.width = '100%'; c.style.height = 'auto';
-    const ctx = c.getContext('2d'); if (!ctx) return;
-    const img = new Image();
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, c.width, c.height);
-      for (const w of walls) {
-        const s = WALL_STYLES.find(x => x.id === w.style);
-        const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
-        const len = Math.sqrt(dx*dx + dy*dy);
-        const angle = Math.atan2(dy, dx);
-        ctx.save();
-        ctx.translate(w.x1, w.y1);
-        ctx.rotate(angle);
-        // Glass panel
-        const glassH = 180;
-        const grad = ctx.createLinearGradient(0, -glassH, 0, 0);
-        grad.addColorStop(0, 'rgba(59,130,246,0.15)');
-        grad.addColorStop(0.3, 'rgba(147,197,253,0.25)');
-        grad.addColorStop(0.5, 'rgba(255,255,255,0.35)');
-        grad.addColorStop(0.7, 'rgba(147,197,253,0.25)');
-        grad.addColorStop(1, 'rgba(59,130,246,0.15)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, -glassH, len, glassH);
-        // Frame lines
-        ctx.strokeStyle = s?.color || '#3b82f6';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(0, -glassH, len, glassH);
-        // Top channel
-        ctx.fillStyle = 'rgba(148,163,184,0.8)';
-        ctx.fillRect(0, -glassH, len, 6);
-        // Bottom channel
-        ctx.fillRect(0, -6, len, 6);
-        // Glass reflection
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        ctx.fillRect(len*0.1, -glassH, len*0.03, glassH);
-        ctx.fillRect(len*0.7, -glassH, len*0.02, glassH);
-        ctx.restore();
-      }
-      // Doors
-      for (const d of doors) {
-        ctx.fillStyle = 'rgba(148,163,184,0.85)';
-        ctx.fillRect(d.x, d.y-d.height, d.width, d.height);
-        ctx.fillStyle = 'rgba(59,130,246,0.2)';
-        ctx.fillRect(d.x+2, d.y-d.height+2, d.width-4, d.height-4);
-        ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2;
-        ctx.strokeRect(d.x, d.y-d.height, d.width, d.height);
-        // Handle
-        ctx.fillStyle = '#94a3b8';
-        ctx.fillRect(d.x+d.width-10, d.y-d.height/2-15, 6, 30);
-      }
-      setShowRender(true);
-    };
-    img.src = photo;
-  };
-
-  const exportRender = () => {
-    const c = renderRef.current; if (!c) return;
-    const link = document.createElement('a');
-    link.download = `${projectName||'glass-render'}.png`;
-    link.href = c.toDataURL('image/png');
-    link.click();
-  };
-
-  // Canvas render
-  useEffect(()=>{
-    const c = canvasRef.current; if(!c)return;
-    const ctx=c.getContext('2d');if(!ctx)return;
-    const img=new Image();
-    const render=()=>{
-      ctx.clearRect(0,0,c.width,c.height);
-      if(photo){ctx.globalAlpha=photoOpacity/100;ctx.drawImage(img,0,0,c.width,c.height);ctx.globalAlpha=1;}
-      else{ctx.fillStyle='#f8fafc';ctx.fillRect(0,0,c.width,c.height);
-        for(let i=0;i<c.width;i+=40){ctx.strokeStyle='#e2e8f0';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,c.height);ctx.stroke();
-          ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(c.width,i);ctx.stroke();}}
-      for(const w of walls){
-        const s=WALL_STYLES.find(x=>x.id===w.style);
-        ctx.beginPath();ctx.moveTo(w.x1,w.y1);ctx.lineTo(w.x2,w.y2);
-        ctx.strokeStyle=s?.color||'#000';ctx.lineWidth=5;ctx.lineCap='round';ctx.stroke();
-        if(w.lengthFt>0){const mx=(w.x1+w.x2)/2,my=(w.y1+w.y2)/2;ctx.font='bold 11px sans-serif';const l=`${w.lengthFt.toFixed(1)}ft`;const tw=ctx.measureText(l).width;ctx.fillStyle='rgba(0,0,0,0.8)';ctx.fillRect(mx-tw/2-5,my-19,tw+10,18);ctx.fillStyle='#fff';ctx.fillText(l,mx-tw/2,my-5);}
-      }
-      for(const d of doors){
-        ctx.fillStyle='rgba(234,179,8,0.7)';ctx.fillRect(d.x,d.y-d.height,d.width,d.height);
-        ctx.strokeStyle='#b45309';ctx.lineWidth=2;ctx.strokeRect(d.x,d.y-d.height,d.width,d.height);
-        ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';const dt=DOOR_TYPES.find(x=>x.id===d.type);
-        ctx.fillText(dt?.icon||'🚪',d.x+d.width/2-10,d.y-d.height/2+4);
-      }
-      if(drawing&&drawing.pts.length>1){
-        ctx.beginPath();ctx.moveTo(drawing.pts[0].x,drawing.pts[0].y);
-        for(let i=1;i<drawing.pts.length;i++)ctx.lineTo(drawing.pts[i].x,drawing.pts[i].y);
-        ctx.strokeStyle='#3b82f6';ctx.lineWidth=3;ctx.setLineDash([6,4]);ctx.stroke();ctx.setLineDash([]);
-      }
-      if(scaleP1){ctx.beginPath();ctx.moveTo(scaleP1.x,scaleP1.y);const e=scaleP2||cursor||scaleP1;ctx.lineTo(e.x,e.y);ctx.strokeStyle='#ef4444';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.stroke();ctx.setLineDash([]);}
-    };
-    if(photo){img.onload=render;img.src=photo;}else render();
-  },[photo,walls,doors,drawing,scaleP1,scaleP2,cursor]);
-
-  // Floor Plan Visualization
-  const generateViz = () => {
-    setShowViz(true);
-    setTimeout(()=>{
-      const c=vizRef.current;if(!c)return;
-      const ctx=c.getContext('2d');if(!ctx)return;
-      c.width=700;c.height=450;
-      ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
-      // Grid
-      ctx.strokeStyle='#f1f5f9';ctx.lineWidth=0.5;
-      for(let i=0;i<700;i+=20){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,450);ctx.stroke();}
-      for(let i=0;i<450;i+=20){ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(700,i);ctx.stroke();}
-      // Title
-      ctx.fillStyle='#1e293b';ctx.font='bold 16px sans-serif';ctx.fillText(projectName||'Floor Plan',20,30);
-      ctx.fillStyle='#64748b';ctx.font='11px sans-serif';ctx.fillText(`Scale: ~${pxPerFt>0?(pxPerFt).toFixed(0):'?'} px/ft  •  ${walls.length} walls  •  ${doors.length} doors`,20,46);
-      // Walls
-      for(const w of walls){
-        const s=WALL_STYLES.find(x=>x.id===w.style);
-        ctx.beginPath();ctx.moveTo(w.x1,w.y1);ctx.lineTo(w.x2,w.y2);
-        ctx.strokeStyle=s?.color||'#000';ctx.lineWidth=6;ctx.lineCap='round';ctx.stroke();
-        if(w.lengthFt>0){const mx=(w.x1+w.x2)/2,my=(w.y1+w.y2)/2;ctx.font='bold 11px sans-serif';const l=`${w.lengthFt.toFixed(1)}ft`;const tw=ctx.measureText(l).width;ctx.fillStyle='#fff';ctx.fillRect(mx-tw/2-3,my-8,tw+6,16);ctx.fillStyle='#1e293b';ctx.fillText(l,mx-tw/2,my+3);}
-      }
-      // Doors
-      for(const d of doors){
-        const dt=DOOR_TYPES.find(x=>x.id===d.type);
-        ctx.fillStyle='#fef3c7';ctx.fillRect(d.x,d.y-d.height,d.width,d.height);
-        ctx.strokeStyle='#d97706';ctx.lineWidth=2;ctx.strokeRect(d.x,d.y-d.height,d.width,d.height);
-        ctx.fillStyle='#92400e';ctx.font='bold 10px sans-serif';
-        const label=`${dt?.name} (${dt?.width}ft)`;
-        const tw=ctx.measureText(label).width;
-        ctx.fillText(label,d.x+d.width/2-tw/2,d.y-d.height/2+3);
-        // Swing arc
-        ctx.beginPath();ctx.arc(d.x,d.y,d.width*0.7,Math.PI,Math.PI*1.5);ctx.strokeStyle='#d97706';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
-      }
-      // Legend
-      ctx.fillStyle='#fff';ctx.strokeStyle='#e2e8f0';ctx.lineWidth=1;
-      ctx.fillRect(520,10,170,20+WALL_STYLES.length*18);
-      ctx.strokeRect(520,10,170,20+WALL_STYLES.length*18);
-      ctx.fillStyle='#1e293b';ctx.font='bold 10px sans-serif';ctx.fillText('LEGEND',530,28);
-      WALL_STYLES.forEach((s,i)=>{
-        ctx.fillStyle=s.color;ctx.fillRect(530,36+i*18,14,4);
-        ctx.fillStyle='#1e293b';ctx.font='9px sans-serif';ctx.fillText(s.name,548,40+i*18);
-      });
-    },50);
-  };
-
-  // Calculations
-  const totals=WALL_STYLES.map(s=>{const ft=walls.filter(w=>w.style===s.id).reduce((sum,w)=>sum+w.lengthFt,0);return{...s,totalFt:ft,wallCost:ft*s.priceFt};}).filter(t=>t.totalFt>0);
-  const wallTotal=totals.reduce((s,t)=>s+t.wallCost,0);
-  const doorTotal=doors.reduce((s,d)=>{const dt=DOOR_TYPES.find(x=>x.id===d.type);return s+(dt?.price||0);},0);
-  const laborHrs=totals.reduce((s,t)=>s+t.totalFt*0.5,0);
-  const laborCost=laborHrs*65;
-  const grandTotal=wallTotal+doorTotal+laborCost;
-  const tax=grandTotal*0.0825;
-  const totalWithTax=grandTotal+tax;
-  const totalFt=totals.reduce((s,t)=>s+t.totalFt,0);
-  const fmt=(n:number)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n||0);}catch{return'$0.00';}};
-
-  const handleCreateEstimate=async()=>{
-    if(!clientId){alert('Select a client first.');return;}
-    if(walls.length===0){alert('Draw at least one wall.');return;}
+  const createEstimate = async () => {
+    if (!clientId) { alert('Select a client first.'); return; }
     setSaving(true);
-    try{
-      const items:{description:string;quantity:number;unit_price:number}[]=[];
-      for(const t of totals)items.push({description:`${t.name} — ${t.totalFt.toFixed(1)} ft`,quantity:Math.round(t.totalFt*100)/100,unit_price:t.priceFt});
-      if(laborHrs>0)items.push({description:'Installation Labor',quantity:Math.round(laborHrs*10)/10,unit_price:65});
-      for(const d of doors){const dt=DOOR_TYPES.find(x=>x.id===d.type);if(dt)items.push({description:`${dt.name} (${dt.width}ft)`,quantity:1,unit_price:dt.price});}
-      const today=new Date().toISOString().split('T')[0];
-      const due=new Date(Date.now()+30*86400000).toISOString().split('T')[0];
-      const res=await fetch('/api/invoices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:parseInt(clientId),issue_date:today,due_date:due,type:'estimate',items,tax_rate:8.25,notes:projectNotes||`Visual estimate for ${projectName||'glass project'}. ${totalFt.toFixed(1)} ft of walls, ${doors.length} door(s).`,terms:'50% deposit required. Estimate valid 30 days.'})});
-      if(!res.ok){alert('Failed');return;}
-      const inv=await res.json();router.push(`/invoices/${inv.id}`);
-    }catch{alert('Error');}
-    finally{setSaving(false);}
+    try {
+      const items: { description: string; quantity: number; unit_price: number }[] = [];
+      runs.forEach((r, i) => { const L = runLen(i); const a = L * heightFt; items.push({ description: `Wall ${i + 1}: ${SYSTEMS[r.system].name} ${FINISHES[r.finish].name} — ${fmtFt(L)} × ${fmtFt(heightFt)} = ${a.toFixed(0)} sq ft`, quantity: Math.round(a * 10) / 10, unit_price: psfMap[r.system] ?? SYSTEMS[r.system].psf }); if (DOORS[r.door].leaves > 0) items.push({ description: `Wall ${i + 1}: ${DOORS[r.door].name}${r.transom ? ' + transom' : ''}${r.sidelites ? ' + sidelites' : ''}`, quantity: 1, unit_price: DOORS[r.door].adder }); });
+      items.push({ description: 'Installation labor', quantity: Math.round(area * 10) / 10, unit_price: laborPsf });
+      const today = new Date().toISOString().split('T')[0]; const due = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const res = await fetch('/api/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: parseInt(clientId), issue_date: today, due_date: due, type: 'estimate', items, tax_rate: taxPct, notes: `${projectName || 'Glass enclosure'} — ${runs.length} wall(s), ${area.toFixed(0)} sq ft. ${usedSystems.map(s => SYSTEMS[s].name).join(', ')}.`, terms: '50% deposit required. Estimate valid 30 days.' }) });
+      if (!res.ok) { alert('Failed to create estimate'); return; }
+      const inv = await res.json(); router.push(`/invoices/${inv.id}`);
+    } catch { alert('Error'); } finally { setSaving(false); }
   };
+
+  const seg = (active: boolean) => `px-2 py-1.5 rounded text-[11px] border transition-colors ${active ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-700 border-slate-200 hover:border-navy-400'}`;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h1 className="text-2xl font-bold text-slate-900">Visual Estimator</h1>
-        <div className="flex gap-2 flex-wrap">
-          <label className="btn-primary btn-sm cursor-pointer"><input type="file" accept="image/*" onChange={handlePhoto} className="hidden"/>📷 Upload Photo</label>
-          <button onClick={()=>{setScaleMode(!scaleMode);setScaleP1(null);setScaleP2(null);}} className={`btn-sm ${scaleMode?'btn-primary':'btn-secondary'}`}>📏 {scaleMode?'Click 2 points...':'Set Scale'}</button>
-          {pxPerFt>0&&<span className="btn-ghost btn-sm text-xs text-green-600 font-medium">✓ {pxPerFt.toFixed(1)}px/ft</span>}
-          <button onClick={generateViz} className="btn-secondary btn-sm" disabled={walls.length===0}>🏗 Floor Plan</button>
-          <button onClick={generateRender} className="btn-primary btn-sm" disabled={!photo||walls.length===0}>🎨 Finished Render</button>
-          {(walls.length>0||doors.length>0)&&<button onClick={clearAll} className="btn-ghost btn-sm text-red-500">Clear</button>}
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Visual Estimator</h1>
+          <p className="text-xs text-slate-500">Photo → dimensions → system → shape → realistic render → price. Close on site.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* LEFT: Client + Templates + Controls */}
         <div className="lg:col-span-1 space-y-3">
           <div className="card p-3">
             <h2 className="text-sm font-semibold mb-2">Client & Project</h2>
-            <select className="select text-sm mb-2" value={clientId} onChange={e=>setClientId(e.target.value)}>
+            <select className="select text-sm mb-2" value={clientId} onChange={e => setClientId(e.target.value)}>
               <option value="">Select client...</option>
-              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <input className="input text-sm mb-2" placeholder="Project name" value={projectName} onChange={e=>setProjectName(e.target.value)}/>
-            <textarea className="input text-xs" rows={2} placeholder="Notes (optional)" value={projectNotes} onChange={e=>setProjectNotes(e.target.value)}/>
+            <input className="input text-sm mb-2" placeholder="Project name" value={projectName} onChange={e => setProjectName(e.target.value)} />
+            <label className="text-[11px] text-slate-500">Wall height (ft)</label>
+            <input type="number" className="input text-sm" value={heightFt} step={0.5} min={6} max={20} onChange={e => setHeightFt(+e.target.value || 9)} />
           </div>
 
           <div className="card p-3">
-            <h2 className="text-sm font-semibold mb-2">Quick Templates</h2>
-            {TEMPLATES.map(t=><button key={t.name} onClick={()=>applyTemplate(t)} className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-slate-50 border border-slate-200 mb-1">{t.name}</button>)}
-          </div>
-
-          <div className="card p-3">
-            <h2 className="text-sm font-semibold mb-2">Glass Blocks <span className="text-slate-400 text-[10px]">(click to drop)</span></h2>
-            <div className="grid grid-cols-3 gap-1">
-              {GLASS_BLOCKS.map(b=><button key={b.name} onClick={()=>{setActiveTool('line'); dropBlock(b, 200+Math.random()*300, 200+Math.random()*150);}} className="text-center p-1.5 rounded text-[10px] hover:bg-slate-50 border border-slate-200 leading-tight" title={`Drop ${b.name}`}>{b.label}<br/><span className="text-slate-400">{b.label.split('\'')[1]||b.name.split(' ')[0]}</span></button>)}
-            </div>
-          </div>
-
-          <div className="card p-3">
-            <h2 className="text-sm font-semibold mb-2">Wall Style</h2>
-            {WALL_STYLES.map(s=><button key={s.id} onClick={()=>{setActiveStyle(s.id);setActiveTool('line');}} className={`w-full text-left px-3 py-2 rounded-lg text-xs mb-1 flex items-center gap-2 ${activeStyle===s.id?'bg-navy-100 text-navy-900 font-medium ring-1 ring-navy-500':'hover:bg-slate-50 text-slate-700'}`}><span className="w-3 h-3 rounded-full shrink-0" style={{background:s.color}}/>{s.name}<span className="ml-auto text-slate-400">${s.priceFt}/ft</span></button>)}
-          </div>
-
-          <div className="card p-3">
-            <h2 className="text-sm font-semibold mb-2">Tools</h2>
+            <h2 className="text-sm font-semibold mb-2">Layout</h2>
             <div className="grid grid-cols-2 gap-1">
-              <button onClick={()=>setActiveTool('line')} className={`btn-xs ${activeTool==='line'?'btn-primary':'btn-secondary'}`}>📏 Line</button>
-              <button onClick={()=>setActiveTool('draw')} className={`btn-xs ${activeTool==='draw'?'btn-primary':'btn-secondary'}`}>✏️ Freehand</button>
-              <button onClick={()=>setActiveTool('door')} className={`btn-xs ${activeTool==='door'?'btn-primary':'btn-secondary'}`}>🚪 Door</button>
-              <button onClick={()=>setActiveTool('erase')} className={`btn-xs ${activeTool==='erase'?'btn-primary':'btn-secondary'}`}>🗑 Erase</button>
+              <button onClick={() => applyPreset('flat')} className={seg(false)}>▭ Flat wall</button>
+              <button onClick={() => applyPreset('L')} className={seg(false)}>⌐ L-shape</button>
+              <button onClick={() => applyPreset('C')} className={seg(false)}>⊐ C / U enclosure</button>
+              <button onClick={startDraw} className={seg(drawMode)}>✎ Draw it</button>
+            </div>
+            {drawMode && <p className="text-[11px] text-amber-600 mt-2">Tap points on the plan to trace the walls. Each segment becomes a wall you can configure.</p>}
+          </div>
+
+          <div className="card p-3">
+            <h2 className="text-sm font-semibold mb-2">Walls</h2>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {runs.map((r, i) => <button key={i} onClick={() => { setSel(i); if (view === 'plan') setView('elev'); }} className={seg(sel === i)} style={{ borderLeft: `3px solid ${SYSTEMS[r.system].color}` }}>Wall {i + 1}</button>)}
+              {runs.length > 1 && <button onClick={() => { setRuns(rs => rs.filter((_, i) => i !== sel)); setPts(ps => ps.filter((_, i) => i !== sel + 1)); setSel(0); }} className="px-2 py-1.5 rounded text-[11px] text-red-500 border border-slate-200">✕</button>}
+            </div>
+            {runs.length > 0 && <>
+              <label className="text-[11px] text-slate-500">Wall {sel + 1} length (ft)</label>
+              <input type="number" className="input text-sm" value={Math.round(runLen(sel) * 10) / 10} step={0.5} onChange={e => setRunLen(sel, +e.target.value || 1)} />
+            </>}
+          </div>
+
+          <div className="card p-3">
+            <h2 className="text-sm font-semibold mb-2">Wall {sel + 1} · System</h2>
+            {Object.entries(SYSTEMS).map(([k, v]) => (
+              <button key={k} onClick={() => setRun({ system: k })} className={`w-full text-left px-3 py-2 rounded-lg text-xs mb-1 border ${run.system === k ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-700 border-slate-200 hover:border-navy-400'}`}>
+                <div className="flex justify-between items-center"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ background: v.color }} />{v.name}</span><span className={run.system === k ? 'text-slate-300' : 'text-slate-400'}>${psfMap[k]}/sf</span></div>
+              </button>
+            ))}
+            <div className="flex gap-2 mt-2">
+              {Object.entries(FINISHES).map(([k, v]) => <button key={k} onClick={() => setRun({ finish: k })} title={v.name} className={`w-8 h-8 rounded-lg border-2 ${run.finish === k ? 'border-navy-600 ring-2 ring-navy-300' : 'border-slate-200'}`} style={{ background: v.face }} />)}
             </div>
           </div>
 
           <div className="card p-3">
-            <h2 className="text-sm font-semibold mb-2">Door Types</h2>
-            {DOOR_TYPES.map(dt=><div key={dt.id} className="text-xs text-slate-500 mb-1 flex justify-between"><span>{dt.icon} {dt.name}</span><span>{fmt(dt.price)}</span></div>)}
+            <h2 className="text-sm font-semibold mb-2">Wall {sel + 1} · Door & Add-ons</h2>
+            <div className="grid grid-cols-2 gap-1">
+              {Object.entries(DOORS).map(([k, v]) => <button key={k} onClick={() => setRun({ door: k })} className={seg(run.door === k)}>{v.name}</button>)}
+            </div>
+            {DOORS[run.door].leaves > 0 && <>
+              <label className="text-[11px] text-slate-500 block mt-2">Leaf width (ft each)</label>
+              <input type="number" className="input text-sm" value={run.leafFt} step={0.25} min={2.5} max={4} onChange={e => setRun({ leafFt: +e.target.value || 3 })} />
+              <div className="grid grid-cols-3 gap-1 mt-2">{(['left', 'center', 'right'] as const).map(p => <button key={p} onClick={() => setRun({ doorPos: p })} className={seg(run.doorPos === p) + ' capitalize'}>{p}</button>)}</div>
+            </>}
+            <button onClick={() => setRun({ transom: !run.transom })} className={`w-full flex justify-between items-center px-3 py-2 rounded-lg border text-xs mt-2 ${run.transom ? 'border-navy-500 bg-navy-50' : 'border-slate-200'}`}>Transom<span className={`w-3 h-3 rounded-full ${run.transom ? 'bg-green-500' : 'bg-slate-300'}`} /></button>
+            <button onClick={() => setRun({ sidelites: !run.sidelites })} className={`w-full flex justify-between items-center px-3 py-2 rounded-lg border text-xs mt-2 ${run.sidelites ? 'border-navy-500 bg-navy-50' : 'border-slate-200'}`}>Sidelites<span className={`w-3 h-3 rounded-full ${run.sidelites ? 'bg-green-500' : 'bg-slate-300'}`} /></button>
+            <label className="text-[11px] text-slate-500 block mt-2">Fixed panels: {run.panels}</label>
+            <input type="range" min={1} max={5} value={run.panels} onChange={e => setRun({ panels: +e.target.value })} className="w-full accent-navy-600" />
           </div>
         </div>
 
-        {/* CENTER: Canvas + Viz */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="card overflow-hidden border-2 border-slate-200">
-            {!photo&&walls.length===0?(
-              <div className="text-center py-24 cursor-pointer" onClick={()=>(document.querySelector('input[type=file]')as HTMLInputElement)?.click()}>
-                <p className="text-5xl mb-3">📷</p><p className="text-slate-500 font-medium">Upload photo or use a template</p>
-                <p className="text-slate-400 text-sm mt-1">Then draw walls on the canvas</p>
-                <label className="btn-primary btn-sm mt-4 cursor-pointer inline-block"><input type="file" accept="image/*" onChange={handlePhoto} className="hidden"/>Choose Photo</label>
-              </div>
-            ):(
-              <canvas ref={canvasRef} style={{touchAction:'none'}} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={()=>setDrawing(null)} className="w-full block"/>
-            )}
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex gap-2">
+            <button onClick={() => setView('plan')} className={`flex-1 py-2 rounded-lg text-sm border ${view === 'plan' ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-600 border-slate-200'}`}>Plan</button>
+            <button onClick={() => setView('elev')} className={`flex-1 py-2 rounded-lg text-sm border ${view === 'elev' ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-600 border-slate-200'}`}>Elevation render</button>
+            <button onClick={() => { setView('photo'); if (photo && !corners) { setPlacing(true); setTmp([]); } }} className={`flex-1 py-2 rounded-lg text-sm border ${view === 'photo' ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-600 border-slate-200'}`}>On site photo</button>
           </div>
-          <p className="text-xs text-slate-400 text-center">
-            {pxPerFt===0?'⚠ Set scale with 📏 first':`Drawing: ${WALL_STYLES.find(s=>s.id===activeStyle)?.name}`}
-            {activeTool==='draw'&&' — Freehand mode'} {activeTool==='door'&&' — Click to place door'}
-          </p>
-          {photo && (
-            <div className="flex items-center gap-2 justify-center mt-1">
-              <span className="text-xs text-slate-400">Photo opacity:</span>
-              <input type="range" min={10} max={100} value={photoOpacity} onChange={e=>setPhotoOpacity(parseInt(e.target.value))} className="w-24 h-4 accent-navy-600" />
-              <span className="text-xs text-slate-400 w-8">{photoOpacity}%</span>
-            </div>
-          )}
-
-          {showViz&&(
-            <div className="card overflow-hidden border-2 border-navy-200 mt-4">
-              <div className="px-4 py-2 bg-navy-50 border-b border-navy-100 flex justify-between items-center">
-                <h2 className="text-sm font-semibold text-navy-900">🏗 Floor Plan Visualization</h2>
-                <div className="flex gap-2">
-                  <button onClick={exportFloorPlan} className="text-xs bg-navy-600 text-white px-3 py-1 rounded hover:bg-navy-700">📥 Download PNG</button>
-                  <button onClick={()=>setShowViz(false)} className="text-xs text-navy-500 hover:text-navy-700">Hide</button>
-                </div>
-              </div>
-              <canvas ref={vizRef} width={700} height={450} className="w-full"/>
-              <div className="px-4 py-2 bg-navy-50 text-xs text-navy-600 text-center">Ready to share with client — includes all walls, doors, and dimensions</div>
-            </div>
-          )}
-
-          {showRender && (
-            <div className="card overflow-hidden border-2 border-green-200 mt-4">
-              <div className="px-4 py-2 bg-green-50 border-b border-green-100 flex justify-between items-center">
-                <h2 className="text-sm font-semibold text-green-900">🎨 Finished Project Render</h2>
-                <div className="flex gap-2">
-                  <button onClick={exportRender} className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">📥 Download</button>
-                  <button onClick={()=>setShowRender(false)} className="text-xs text-green-600 hover:text-green-800">Hide</button>
-                </div>
-              </div>
-              <canvas ref={renderRef} className="w-full"/>
-              <div className="px-4 py-2 bg-green-50 text-xs text-green-700 text-center">
-                Glass walls rendered on your photo — share with client to close the sale
-              </div>
-            </div>
-          )}
+          <div className="card overflow-hidden border-2 border-slate-200 relative">
+            <canvas ref={cvRef} width={1000} height={720} style={{ touchAction: 'none' }} onPointerDown={onCanvasDown} className="w-full block" />
+            {placing && <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-navy-900/90 text-white text-xs px-4 py-2 rounded-full pointer-events-none text-center">Tap the 4 corners of Wall {sel + 1}: TL → TR → BR → BL</div>}
+            {view === 'plan' && drawMode && <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-amber-500/90 text-white text-xs px-4 py-2 rounded-full pointer-events-none">Tap to add wall corners</div>}
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <label className="btn-secondary btn-sm cursor-pointer flex-1 text-center"><input type="file" accept="image/*" onChange={onPhoto} className="hidden" />📷 Site photo</label>
+            {photo && view === 'photo' && <button onClick={() => { setCorners(null); setPlacing(true); setTmp([]); }} className="btn-secondary btn-sm">📐 Re-place</button>}
+            {drawMode && <button onClick={() => setDrawMode(false)} className="btn-secondary btn-sm">✓ Finish shape</button>}
+            <button onClick={download} className="btn-primary btn-sm flex-1">⬇ Download</button>
+          </div>
+          <p className="text-[11px] text-slate-400 text-center">On the photo, the render maps onto <b>Wall {sel + 1}</b> — switch walls on the left to place each one.</p>
         </div>
 
-        {/* RIGHT: Estimate */}
         <div className="lg:col-span-1 space-y-3">
           <div className="card p-3">
-            <h2 className="text-sm font-semibold mb-2">Estimate</h2>
-            {totals.length===0&&doors.length===0?<p className="text-xs text-slate-400">Draw walls to see pricing.</p>:(
-              <div className="space-y-2 text-xs">
-                {totals.map(t=><div key={t.id} className="flex justify-between border-b border-slate-100 pb-1"><div><span className="w-2 h-2 rounded-full inline-block mr-1" style={{background:t.color}}/>{t.name}</div><div className="font-medium">{t.totalFt.toFixed(1)}ft·{fmt(t.wallCost)}</div></div>)}
-                {doors.map(d=>{const dt=DOOR_TYPES.find(x=>x.id===d.type);return dt?<div key={d.id} className="flex justify-between border-b border-slate-100 pb-1"><span>{dt.icon} {dt.name}</span><span className="font-medium">{fmt(dt.price)}</span></div>:null;})}
-                <div className="flex justify-between"><span className="text-slate-500">Materials</span><span>{fmt(wallTotal+doorTotal)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Labor ({laborHrs.toFixed(1)}hrs)</span><span>{fmt(laborCost)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Tax (8.25%)</span><span>{fmt(tax)}</span></div>
-                <div className="flex justify-between font-bold text-sm pt-2 border-t border-slate-200"><span>Total</span><span>{fmt(totalWithTax)}</span></div>
-              </div>
-            )}
-          </div>
-
-          <button onClick={handleCreateEstimate} className="btn-primary w-full" disabled={saving||!clientId||walls.length===0}>{saving?'Creating...':'📋 Create Estimate'}</button>
-
-          {(walls.length>0||doors.length>0)&&(
-            <div className="card p-3">
-              <h2 className="text-sm font-semibold mb-2">Elements</h2>
-              <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
-                {walls.map((w,i)=>{const s=WALL_STYLES.find(st=>st.id===w.style);return(
-                  <div key={w.id} className="flex items-center justify-between py-0.5 border-b border-slate-100"><div className="flex items-center gap-1.5"><span className="text-slate-400">{i+1}.</span><span className="w-2 h-2 rounded-full" style={{background:s?.color}}/>{s?.name}</div><div className="flex items-center gap-1"><span className="font-medium">{w.lengthFt>0?`${w.lengthFt.toFixed(1)}ft`:'—'}</span><button onClick={()=>removeWall(w.id)} className="text-red-400 font-bold">×</button></div></div>
-                );})}
-                {doors.map(d=>{const dt=DOOR_TYPES.find(x=>x.id===d.type);return(
-                  <div key={d.id} className="flex items-center justify-between py-0.5 border-b border-slate-100"><span>{dt?.icon} {dt?.name}</span><button onClick={()=>removeDoor(d.id)} className="text-red-400 font-bold">×</button></div>
-                );})}
-              </div>
+            <h2 className="text-sm font-semibold mb-2">Live Estimate</h2>
+            <div className="flex flex-wrap gap-1 mb-2">
+              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{runs.length} wall{runs.length > 1 ? 's' : ''}</span>
+              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{area.toFixed(0)} sq ft</span>
+              {usedSystems.map(s => <span key={s} className="text-[10px] px-2 py-0.5 rounded-full text-white" style={{ background: SYSTEMS[s].color }}>{SYSTEMS[s].name}</span>)}
             </div>
-          )}
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between border-b border-slate-100 pb-1"><span className="text-slate-500">Glass & frame</span><span className="font-medium">{money(glass)}</span></div>
+              {doorAdd > 0 && <div className="flex justify-between border-b border-slate-100 pb-1"><span className="text-slate-500">Doors</span><span className="font-medium">{money(doorAdd)}</span></div>}
+              <div className="flex justify-between border-b border-slate-100 pb-1"><span className="text-slate-500">Labor · {area.toFixed(0)} sf @ ${laborPsf}</span><span className="font-medium">{money(labor)}</span></div>
+              <div className="flex justify-between border-b border-slate-100 pb-1"><span className="text-slate-500">Tax ({taxPct}%)</span><span>{money(tax)}</span></div>
+              <div className="flex justify-between font-bold text-base pt-1"><span>Total</span><span>{money(total)}</span></div>
+            </div>
+          </div>
+          <button onClick={createEstimate} disabled={saving || !clientId} className="btn-primary w-full">{saving ? 'Creating...' : '📋 Create Estimate'}</button>
+          <div className="card p-3">
+            <h2 className="text-sm font-semibold mb-2">Pricing (editable)</h2>
+            {usedSystems.map(s => <div key={s} className="mb-1"><label className="text-[11px] text-slate-500">{SYSTEMS[s].name} $/sf</label><input type="number" className="input text-sm" value={psfMap[s]} onChange={e => setPsfMap(m => ({ ...m, [s]: +e.target.value || 0 }))} /></div>)}
+            <label className="text-[11px] text-slate-500">Labor $/sf</label>
+            <input type="number" className="input text-sm mb-1" value={laborPsf} onChange={e => setLaborPsf(+e.target.value || 0)} />
+            <label className="text-[11px] text-slate-500">Tax %</label>
+            <input type="number" className="input text-sm" value={taxPct} step={0.05} onChange={e => setTaxPct(+e.target.value || 0)} />
+          </div>
         </div>
       </div>
     </div>
