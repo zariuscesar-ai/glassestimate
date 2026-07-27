@@ -12,6 +12,25 @@ export default function Sidebar() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<number>(1);
 
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    const isDark = document.documentElement.classList.contains('dark');
+    setDark(isDark);
+  }, []);
+
+  const toggleTheme = () => {
+    const html = document.documentElement;
+    if (html.classList.contains('dark')) {
+      html.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+      setDark(false);
+    } else {
+      html.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+      setDark(true);
+    }
+  };
+
   useEffect(() => {
     fetch('/api/companies').then((r) => r.json()).then((d) => setCompanies(Array.isArray(d) ? d : [])).catch(() => {});
     const saved = localStorage.getItem('activeCompanyId');
@@ -70,8 +89,11 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-4 py-3 border-t border-navy-700 text-xs text-slate-500">
-        SaaS v2.0
+      <div className="px-4 py-3 border-t border-navy-700 flex items-center justify-between">
+        <span className="text-xs text-slate-500">SaaS v2.0</span>
+        <button onClick={toggleTheme} className="text-sm hover:scale-110 transition-transform" title={dark ? 'Switch to light' : 'Switch to dark'}>
+          {dark ? '☀️' : '🌙'}
+        </button>
       </div>
     </aside>
   );
