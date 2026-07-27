@@ -61,6 +61,8 @@ export default function VisualEstimatorPage() {
   const [pxPerFt, setPxPerFt] = useState(0);
   const [photoOpacity, setPhotoOpacity] = useState(70);
   const [saving, setSaving] = useState(false);
+  const renderRef = useRef<HTMLCanvasElement>(null);
+  const [showRender, setShowRender] = useState(false);
 
   // Load clients
   useEffect(() => { fetch('/api/clients').then(r=>r.json()).then(d=>{if(Array.isArray(d))setClients(d)}).catch(()=>{}); }, []);
@@ -170,6 +172,73 @@ export default function VisualEstimatorPage() {
     const c = vizRef.current; if (!c) return;
     const link = document.createElement('a');
     link.download = `${projectName||'floor-plan'}.png`;
+    link.href = c.toDataURL('image/png');
+    link.click();
+  };
+
+  // Generate realistic finished render on photo
+  const generateRender = () => {
+    if (!photo) { alert('Upload a photo first.'); return; }
+    const c = renderRef.current; if (!c) return;
+    c.width = 800; c.height = 600; c.style.width = '100%'; c.style.height = 'auto';
+    const ctx = c.getContext('2d'); if (!ctx) return;
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      for (const w of walls) {
+        const s = WALL_STYLES.find(x => x.id === w.style);
+        const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        const angle = Math.atan2(dy, dx);
+        ctx.save();
+        ctx.translate(w.x1, w.y1);
+        ctx.rotate(angle);
+        // Glass panel
+        const glassH = 180;
+        const grad = ctx.createLinearGradient(0, -glassH, 0, 0);
+        grad.addColorStop(0, 'rgba(59,130,246,0.15)');
+        grad.addColorStop(0.3, 'rgba(147,197,253,0.25)');
+        grad.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+        grad.addColorStop(0.7, 'rgba(147,197,253,0.25)');
+        grad.addColorStop(1, 'rgba(59,130,246,0.15)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, -glassH, len, glassH);
+        // Frame lines
+        ctx.strokeStyle = s?.color || '#3b82f6';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(0, -glassH, len, glassH);
+        // Top channel
+        ctx.fillStyle = 'rgba(148,163,184,0.8)';
+        ctx.fillRect(0, -glassH, len, 6);
+        // Bottom channel
+        ctx.fillRect(0, -6, len, 6);
+        // Glass reflection
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillRect(len*0.1, -glassH, len*0.03, glassH);
+        ctx.fillRect(len*0.7, -glassH, len*0.02, glassH);
+        ctx.restore();
+      }
+      // Doors
+      for (const d of doors) {
+        ctx.fillStyle = 'rgba(148,163,184,0.85)';
+        ctx.fillRect(d.x, d.y-d.height, d.width, d.height);
+        ctx.fillStyle = 'rgba(59,130,246,0.2)';
+        ctx.fillRect(d.x+2, d.y-d.height+2, d.width-4, d.height-4);
+        ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2;
+        ctx.strokeRect(d.x, d.y-d.height, d.width, d.height);
+        // Handle
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillRect(d.x+d.width-10, d.y-d.height/2-15, 6, 30);
+      }
+      setShowRender(true);
+    };
+    img.src = photo;
+  };
+
+  const exportRender = () => {
+    const c = renderRef.current; if (!c) return;
+    const link = document.createElement('a');
+    link.download = `${projectName||'glass-render'}.png`;
     link.href = c.toDataURL('image/png');
     link.click();
   };
@@ -291,7 +360,8 @@ export default function VisualEstimatorPage() {
           <label className="btn-primary btn-sm cursor-pointer"><input type="file" accept="image/*" onChange={handlePhoto} className="hidden"/>📷 Upload Photo</label>
           <button onClick={()=>{setScaleMode(!scaleMode);setScaleP1(null);setScaleP2(null);}} className={`btn-sm ${scaleMode?'btn-primary':'btn-secondary'}`}>📏 {scaleMode?'Click 2 points...':'Set Scale'}</button>
           {pxPerFt>0&&<span className="btn-ghost btn-sm text-xs text-green-600 font-medium">✓ {pxPerFt.toFixed(1)}px/ft</span>}
-          <button onClick={generateViz} className="btn-secondary btn-sm" disabled={walls.length===0}>🏗 Generate Floor Plan</button>
+          <button onClick={generateViz} className="btn-secondary btn-sm" disabled={walls.length===0}>🏗 Floor Plan</button>
+          <button onClick={generateRender} className="btn-primary btn-sm" disabled={!photo||walls.length===0}>🎨 Finished Render</button>
           {(walls.length>0||doors.length>0)&&<button onClick={clearAll} className="btn-ghost btn-sm text-red-500">Clear</button>}
         </div>
       </div>
@@ -378,6 +448,22 @@ export default function VisualEstimatorPage() {
               </div>
               <canvas ref={vizRef} width={700} height={450} className="w-full"/>
               <div className="px-4 py-2 bg-navy-50 text-xs text-navy-600 text-center">Ready to share with client — includes all walls, doors, and dimensions</div>
+            </div>
+          )}
+
+          {showRender && (
+            <div className="card overflow-hidden border-2 border-green-200 mt-4">
+              <div className="px-4 py-2 bg-green-50 border-b border-green-100 flex justify-between items-center">
+                <h2 className="text-sm font-semibold text-green-900">🎨 Finished Project Render</h2>
+                <div className="flex gap-2">
+                  <button onClick={exportRender} className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">📥 Download</button>
+                  <button onClick={()=>setShowRender(false)} className="text-xs text-green-600 hover:text-green-800">Hide</button>
+                </div>
+              </div>
+              <canvas ref={renderRef} className="w-full"/>
+              <div className="px-4 py-2 bg-green-50 text-xs text-green-700 text-center">
+                Glass walls rendered on your photo — share with client to close the sale
+              </div>
             </div>
           )}
         </div>
