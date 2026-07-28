@@ -198,7 +198,7 @@
       <div class="stat"><div class="n">1 visit</div><div class="t">Quote &amp; close on-site</div></div>
       <div class="stat"><div class="n">~10 min</div><div class="t">Photo to priced proposal</div></div>
       <div class="stat"><div class="n">$0</div><div class="t">Setup fees, ever</div></div>
-      <div class="stat"><div class="n">7 days</div><div class="t">Free — no card to start</div></div>
+      <div class="stat"><div class="n">7 days</div><div class="t">Free trial · cancel anytime</div></div>
     </div>
   </div>
 </header>
@@ -297,10 +297,10 @@
           <li>Invoicing, payments &amp; job tracking</li>
           <li>Works on your iPad · email support</li>
         </ul>
-        <a href="#" class="btn btn-primary">Start 7-day free trial</a>
+        <a href="https://buy.stripe.com/8x200cf659F79xs3rE1B602" id="checkoutBtn" class="btn btn-primary">Start 7-day free trial</a>
       </div>
     </div>
-    <p class="pricefoot">No setup fees · no contract · no credit card required to start your trial.</p>
+    <p class="pricefoot">No setup fees · no contract · free for 7 days — cancel anytime before you're billed.</p>
   </div>
 </section>
 
@@ -325,7 +325,8 @@
     <div class="cta">
       <h2>Stop losing jobs to the follow-up.</h2>
       <p>Start your 7-day free trial today and close your next glass job on the first visit.</p>
-      <a href="#" class="btn btn-primary btn-lg">Start 7-day free trial</a>
+      <a href="#pricing" class="btn btn-primary btn-lg">Start 7-day free trial</a>
+      <p style="color:#dbe6ff;font-size:13.5px;margin-top:16px">Questions first? Email us at <a href="mailto:order@eaglesglassinc.com" style="color:#fff;font-weight:600;text-decoration:underline">order@eaglesglassinc.com</a></p>
     </div>
   </div>
 </section>
@@ -333,11 +334,13 @@
 <footer>
   <div class="wrap">
     <div class="logo"><span class="mk">◧</span> GlassEstimate</div>
-    <div>© 2026 GlassEstimate · Built for glass &amp; glazing contractors</div>
+    <div>Contact: <a href="mailto:order@eaglesglassinc.com" style="color:var(--accent);font-weight:600">order@eaglesglassinc.com</a><br>© 2026 GlassEstimate · Built for glass &amp; glazing contractors</div>
   </div>
 </footer>
 
 <script>
+  const MONTHLY_URL='https://buy.stripe.com/8x200cf659F79xs3rE1B602';
+  const YEARLY_URL='https://buy.stripe.com/aFa00ce215oRaBw0fs1B603';
   let yearly=false;
   function toggleBilling(){
     yearly=!yearly;
@@ -347,6 +350,7 @@
     document.querySelectorAll('.price .amt').forEach(el=>{ el.textContent = yearly? el.dataset.y : el.dataset.m; });
     document.querySelectorAll('.per').forEach(el=>{ el.textContent = yearly? '/mo, billed yearly' : '/mo'; });
     document.querySelectorAll('.billed').forEach(el=>{ el.textContent = yearly? el.dataset.ytxt : el.dataset.mtxt; });
+    document.getElementById('checkoutBtn').href = yearly? YEARLY_URL : MONTHLY_URL;
   }
   function tog(b){ const qa=b.parentElement; qa.classList.toggle('open'); b.querySelector('.pm').textContent = qa.classList.contains('open')?'–':'+'; }
 </script>
