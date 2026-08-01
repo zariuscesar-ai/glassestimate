@@ -1,15 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async redirects() {
-    return [
-      {
-        // On the public marketing domain, send the homepage to the landing page.
-        source: '/',
-        has: [{ type: 'host', value: 'glassestimate.app' }],
-        destination: '/landing.html',
-        permanent: false,
-      },
-    ];
-  },
+  // Homepage routing (marketing landing vs. app dashboard) is handled in
+  // src/middleware.ts so it can depend on whether the visitor is signed in.
+  // Previously a host-based redirect here sent glassestimate.app/ to
+  // /landing.html for everyone, which bounced logged-in users away from the app.
 };
 module.exports = nextConfig;
