@@ -1,8 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 
-const DATA_FILE = path.join(process.cwd(), 'data.json');
-
 // ---- Types ----
 export interface CompanyRow {
   id: number;
@@ -187,8 +185,7 @@ interface StoreData {
   next_ids: Record<string, number>;
 }
 
-// ---- Store ----
-let store: StoreData;
+function now(): string { return new Date().toISOString().replace('T', ' ').slice(0, 19); }
 
 function defaultStore(): StoreData {
   return {
@@ -268,484 +265,674 @@ function defaultStore(): StoreData {
   };
 }
 
-function loadStore(): StoreData {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-      const def = defaultStore();
-      for (const k of Object.keys(def)) {
-        if (!(k in data)) (data as any)[k] = (def as any)[k];
-      }
-      return data as StoreData;
-    }
-  } catch (err) {
-    console.error('Corrupted data, starting fresh:', err);
-    try { fs.copyFileSync(DATA_FILE, DATA_FILE + '.corrupted.bak'); } catch {}
+// ---------------------------------------------------------------------------
+// Persistence adapters
+// ---------------------------------------------------------------------------
+// The entire store is persisted as a single JSON document. In production this
+// lives in a durable KV store (Upstash Redis via the Vercel Marketplace / Vercel
+// KV). Locally, with no KV env vars present, it falls back to a data.json file
+// so `npm run dev` works with zero setup.
+
+interface PersistenceAdapter {
+  readonly name: string;
+  load(): Promise<StoreData | null>;
+  save(store: StoreData): Promise<void>;
+}
+
+const STORE_KEY = 'glassestimate:store:v1';
+
+function kvEnv(): { url: string; token: string } | null {
+  // Support both the Vercel KV integration variable names and the raw Upstash
+  // variable names, so it works however the datastore was provisioned.
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (url && token) return { url, token };
+  return null;
+}
+
+class KvAdapter implements PersistenceAdapter {
+  readonly name = 'kv';
+  private client: any = null;
+
+  private async getClient() {
+    if (this.client) return this.client;
+    const env = kvEnv();
+    if (!env) throw new Error('KV env vars missing');
+    // Lazy import so the file adapter path never needs the dependency at runtime.
+    const { Redis } = await import('@upstash/redis');
+    this.client = new Redis({ url: env.url, token: env.token });
+    return this.client;
   }
-  return defaultStore();
+
+  async load(): Promise<StoreData | null> {
+    const client = await this.getClient();
+    // @upstash/redis auto-deserializes JSON values.
+    const data = (await client.get(STORE_KEY)) as StoreData | null;
+    return data ?? null;
+  }
+
+  async save(store: StoreData): Promise<void> {
+    const client = await this.getClient();
+    await client.set(STORE_KEY, store);
+  }
 }
 
-function saveStore() {
-  const tmp = DATA_FILE + '.tmp';
-  try { fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf-8'); fs.renameSync(tmp, DATA_FILE); }
-  catch (err) { console.error('Save failed:', err); }
+class FileAdapter implements PersistenceAdapter {
+  readonly name = 'file';
+  private file = path.join(process.cwd(), 'data.json');
+
+  async load(): Promise<StoreData | null> {
+    try {
+      if (fs.existsSync(this.file)) {
+        return JSON.parse(fs.readFileSync(this.file, 'utf-8')) as StoreData;
+      }
+    } catch (err) {
+      console.error('Corrupted data, starting fresh:', err);
+      try { fs.copyFileSync(this.file, this.file + '.corrupted.bak'); } catch {}
+    }
+    return null;
+  }
+
+  async save(store: StoreData): Promise<void> {
+    const tmp = this.file + '.tmp';
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf-8');
+      fs.renameSync(tmp, this.file);
+    } catch (err) {
+      console.error('Save failed:', err);
+    }
+  }
 }
 
-function now(): string { return new Date().toISOString().replace('T', ' ').slice(0, 19); }
+const adapter: PersistenceAdapter = kvEnv() ? new KvAdapter() : new FileAdapter();
 
-store = loadStore();
+/** Which persistence backend is active. Exposed for a health/debug endpoint. */
+export const persistenceBackend = adapter.name;
+
+// ---------------------------------------------------------------------------
+// Store access
+// ---------------------------------------------------------------------------
+// The store is cached in module memory. Reads are served from cache within a
+// short TTL to keep KV round-trips low; any write refreshes the cache and
+// writes through. Writes force a fresh read first (read-modify-write) so they
+// build on the latest persisted state. This is appropriate for the app's
+// current single-shop scale; the JSON-blob model is intentionally simple and
+// can be replaced with relational storage when multi-tenant auth lands.
+
+let store: StoreData | null = null;
+let loadedAt = 0;
+let inFlight: Promise<StoreData> | null = null;
+const CACHE_TTL_MS = 3000;
+
+function normalize(data: StoreData): StoreData {
+  // Ensure any keys added to the schema after a blob was first written exist.
+  const def = defaultStore();
+  for (const k of Object.keys(def) as (keyof StoreData)[]) {
+    if (!(k in data) || (data as any)[k] == null) (data as any)[k] = (def as any)[k];
+  }
+  return data;
+}
+
+async function loadFresh(): Promise<StoreData> {
+  const loaded = await adapter.load();
+  if (loaded) {
+    store = normalize(loaded);
+  } else {
+    // First run against an empty datastore: seed with defaults and persist.
+    store = defaultStore();
+    await adapter.save(store);
+  }
+  loadedAt = Date.now();
+  return store;
+}
+
+async function getStore(forceFresh = false): Promise<StoreData> {
+  if (!forceFresh && store && Date.now() - loadedAt < CACHE_TTL_MS) return store;
+  if (!inFlight) {
+    inFlight = loadFresh().finally(() => { inFlight = null; });
+  }
+  return inFlight;
+}
+
+async function persist(s: StoreData): Promise<void> {
+  store = s;
+  loadedAt = Date.now();
+  await adapter.save(s);
+}
+
+/** Read helper: loads (cached) store and returns a projection. */
+async function read<T>(fn: (s: StoreData) => T): Promise<T> {
+  const s = await getStore();
+  return fn(s);
+}
+
+/** Write helper: force-refresh, mutate, persist, return result. */
+async function write<T>(fn: (s: StoreData) => T): Promise<T> {
+  const s = await getStore(true);
+  const result = fn(s);
+  await persist(s);
+  return result;
+}
 
 // ---- Helpers ----
 function filterByCompany<T extends { company_id?: number }>(arr: T[], companyId: number): T[] {
   return arr.filter((item) => !item.company_id || item.company_id === companyId);
 }
 
+function assembleInvoice(s: StoreData, id: number): InvoiceRow | undefined {
+  const inv = s.invoices.find((i) => i.id === id);
+  if (!inv) return undefined;
+  const client = s.clients.find((c) => c.id === inv.client_id);
+  inv.client_name = client?.name;
+  inv.items = s.invoice_items.filter((ii) => ii.invoice_id === id).sort((a, b) => a.sort_order - b.sort_order);
+  inv.payments = s.payments.filter((p) => p.invoice_id === id);
+  return inv;
+}
+
 // ---- DB API ----
 export const db = {
   companies: {
-    all(): CompanyRow[] { return [...store.companies]; },
-    getById(id: number) { return store.companies.find((c) => c.id === id); },
-    getBySlug(slug: string) { return store.companies.find((c) => c.slug === slug); },
-    insert(data: Partial<CompanyRow>): CompanyRow {
-      const row: CompanyRow = {
-        id: store.next_ids.companies++,
-        name: data.name || '', slug: data.slug || `company-${store.next_ids.companies}`,
-        logo: data.logo || '', address: data.address || '', phone: data.phone || '',
-        email: data.email || '', website: data.website || '', tax_id: data.tax_id || '',
-        invoice_prefix: data.invoice_prefix || 'INV-', invoice_next_number: data.invoice_next_number || 1,
-        default_tax_rate: data.default_tax_rate ?? 0, default_due_days: data.default_due_days || 30,
-        default_notes: data.default_notes || '', default_terms: data.default_terms || '',
-        created_at: now(),
-      };
-      store.companies.push(row); saveStore(); return row;
+    all(): Promise<CompanyRow[]> { return read((s) => [...s.companies]); },
+    getById(id: number): Promise<CompanyRow | undefined> { return read((s) => s.companies.find((c) => c.id === id)); },
+    getBySlug(slug: string): Promise<CompanyRow | undefined> { return read((s) => s.companies.find((c) => c.slug === slug)); },
+    insert(data: Partial<CompanyRow>): Promise<CompanyRow> {
+      return write((s) => {
+        const row: CompanyRow = {
+          id: s.next_ids.companies++,
+          name: data.name || '', slug: data.slug || `company-${s.next_ids.companies}`,
+          logo: data.logo || '', address: data.address || '', phone: data.phone || '',
+          email: data.email || '', website: data.website || '', tax_id: data.tax_id || '',
+          invoice_prefix: data.invoice_prefix || 'INV-', invoice_next_number: data.invoice_next_number || 1,
+          default_tax_rate: data.default_tax_rate ?? 0, default_due_days: data.default_due_days || 30,
+          default_notes: data.default_notes || '', default_terms: data.default_terms || '',
+          created_at: now(),
+        };
+        s.companies.push(row);
+        return row;
+      });
     },
-    update(id: number, data: Partial<CompanyRow>): CompanyRow | null {
-      const idx = store.companies.findIndex((c) => c.id === id);
-      if (idx === -1) return null;
-      store.companies[idx] = { ...store.companies[idx], ...data, id };
-      saveStore(); return store.companies[idx];
+    update(id: number, data: Partial<CompanyRow>): Promise<CompanyRow | null> {
+      return write((s) => {
+        const idx = s.companies.findIndex((c) => c.id === id);
+        if (idx === -1) return null;
+        s.companies[idx] = { ...s.companies[idx], ...data, id };
+        return s.companies[idx];
+      });
     },
   },
 
   clients: {
-    all(companyId: number): ClientRow[] {
-      return filterByCompany(store.clients, companyId).sort((a, b) => a.name.localeCompare(b.name));
+    all(companyId: number): Promise<ClientRow[]> {
+      return read((s) => filterByCompany(s.clients, companyId).sort((a, b) => a.name.localeCompare(b.name)));
     },
-    getById(id: number) { return store.clients.find((c) => c.id === id); },
-    insert(data: Partial<ClientRow>): ClientRow {
-      const row: ClientRow = {
-        id: store.next_ids.clients++, company_id: data.company_id || 1,
-        name: data.name || '', contact_person: data.contact_person || '',
-        email: data.email || '', phone: data.phone || '',
-        billing_address: data.billing_address || '', shipping_address: data.shipping_address || '',
-        notes: data.notes || '', tags: data.tags || '', lead_source: data.lead_source || '',
-        created_at: now(), updated_at: now(),
-      };
-      store.clients.push(row); saveStore(); return row;
+    getById(id: number): Promise<ClientRow | undefined> { return read((s) => s.clients.find((c) => c.id === id)); },
+    insert(data: Partial<ClientRow>): Promise<ClientRow> {
+      return write((s) => {
+        const row: ClientRow = {
+          id: s.next_ids.clients++, company_id: data.company_id || 1,
+          name: data.name || '', contact_person: data.contact_person || '',
+          email: data.email || '', phone: data.phone || '',
+          billing_address: data.billing_address || '', shipping_address: data.shipping_address || '',
+          notes: data.notes || '', tags: data.tags || '', lead_source: data.lead_source || '',
+          created_at: now(), updated_at: now(),
+        };
+        s.clients.push(row);
+        return row;
+      });
     },
-    update(id: number, data: Partial<ClientRow>): ClientRow | null {
-      const idx = store.clients.findIndex((c) => c.id === id);
-      if (idx === -1) return null;
-      store.clients[idx] = { ...store.clients[idx], ...data, id, updated_at: now() };
-      saveStore(); return store.clients[idx];
+    update(id: number, data: Partial<ClientRow>): Promise<ClientRow | null> {
+      return write((s) => {
+        const idx = s.clients.findIndex((c) => c.id === id);
+        if (idx === -1) return null;
+        s.clients[idx] = { ...s.clients[idx], ...data, id, updated_at: now() };
+        return s.clients[idx];
+      });
     },
-    delete(id: number): boolean {
-      const idx = store.clients.findIndex((c) => c.id === id);
-      if (idx === -1) return false;
-      store.clients.splice(idx, 1); saveStore(); return true;
+    delete(id: number): Promise<boolean> {
+      return write((s) => {
+        const idx = s.clients.findIndex((c) => c.id === id);
+        if (idx === -1) return false;
+        s.clients.splice(idx, 1);
+        return true;
+      });
     },
-    getClientStats(companyId: number, clientId: number) {
-      const clientInvoices = store.invoices.filter((i) => i.company_id === companyId && i.client_id === clientId);
-      const totalSpent = clientInvoices.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0);
-      const outstanding = clientInvoices.filter((i) => i.status === 'sent' || i.status === 'overdue').reduce((s, i) => {
-        const paid = store.payments.filter((p) => p.invoice_id === i.id).reduce((sp, p) => sp + p.amount, 0);
-        return s + (i.total - paid);
-      }, 0);
-      return { totalInvoices: clientInvoices.length, totalSpent, outstanding };
+    getClientStats(companyId: number, clientId: number): Promise<{ totalInvoices: number; totalSpent: number; outstanding: number }> {
+      return read((s) => {
+        const clientInvoices = s.invoices.filter((i) => i.company_id === companyId && i.client_id === clientId);
+        const totalSpent = clientInvoices.filter((i) => i.status === 'paid').reduce((sum, i) => sum + i.total, 0);
+        const outstanding = clientInvoices.filter((i) => i.status === 'sent' || i.status === 'overdue').reduce((sum, i) => {
+          const paid = s.payments.filter((p) => p.invoice_id === i.id).reduce((sp, p) => sp + p.amount, 0);
+          return sum + (i.total - paid);
+        }, 0);
+        return { totalInvoices: clientInvoices.length, totalSpent, outstanding };
+      });
     },
   },
 
   products: {
-    all(companyId: number, filter?: { category?: string; search?: string }): ProductRow[] {
-      let list = filterByCompany(store.products, companyId);
-      if (filter?.category) list = list.filter((p) => p.category === filter.category);
-      if (filter?.search) {
-        const s = filter.search.toLowerCase();
-        list = list.filter((p) => p.name.toLowerCase().includes(s) || p.description.toLowerCase().includes(s) || p.sku.toLowerCase().includes(s));
-      }
-      return list.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name));
+    all(companyId: number, filter?: { category?: string; search?: string }): Promise<ProductRow[]> {
+      return read((s) => {
+        let list = filterByCompany(s.products, companyId);
+        if (filter?.category) list = list.filter((p) => p.category === filter.category);
+        if (filter?.search) {
+          const q = filter.search.toLowerCase();
+          list = list.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
+        }
+        return list.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name));
+      });
     },
-    getById(id: number) { return store.products.find((p) => p.id === id); },
-    insert(data: Partial<ProductRow>): ProductRow {
-      const row: ProductRow = {
-        id: store.next_ids.products++, company_id: data.company_id || 1,
-        name: data.name || '', description: data.description || '', sku: data.sku || '',
-        unit_price: data.unit_price ?? 0, cost_price: data.cost_price ?? 0,
-        unit: data.unit || 'each', category: data.category || '', tax_category: data.tax_category || 'standard',
-        is_active: data.is_active ?? true, created_at: now(), updated_at: now(),
-      };
-      store.products.push(row); saveStore(); return row;
+    getById(id: number): Promise<ProductRow | undefined> { return read((s) => s.products.find((p) => p.id === id)); },
+    insert(data: Partial<ProductRow>): Promise<ProductRow> {
+      return write((s) => {
+        const row: ProductRow = {
+          id: s.next_ids.products++, company_id: data.company_id || 1,
+          name: data.name || '', description: data.description || '', sku: data.sku || '',
+          unit_price: data.unit_price ?? 0, cost_price: data.cost_price ?? 0,
+          unit: data.unit || 'each', category: data.category || '', tax_category: data.tax_category || 'standard',
+          is_active: data.is_active ?? true, created_at: now(), updated_at: now(),
+        };
+        s.products.push(row);
+        return row;
+      });
     },
-    update(id: number, data: Partial<ProductRow>): ProductRow | null {
-      const idx = store.products.findIndex((p) => p.id === id);
-      if (idx === -1) return null;
-      store.products[idx] = { ...store.products[idx], ...data, id, updated_at: now() };
-      saveStore(); return store.products[idx];
+    update(id: number, data: Partial<ProductRow>): Promise<ProductRow | null> {
+      return write((s) => {
+        const idx = s.products.findIndex((p) => p.id === id);
+        if (idx === -1) return null;
+        s.products[idx] = { ...s.products[idx], ...data, id, updated_at: now() };
+        return s.products[idx];
+      });
     },
-    delete(id: number): boolean {
-      const idx = store.products.findIndex((p) => p.id === id);
-      if (idx === -1) return false;
-      store.products.splice(idx, 1); saveStore(); return true;
+    delete(id: number): Promise<boolean> {
+      return write((s) => {
+        const idx = s.products.findIndex((p) => p.id === id);
+        if (idx === -1) return false;
+        s.products.splice(idx, 1);
+        return true;
+      });
     },
-    categories(companyId: number): string[] {
-      return [...new Set(filterByCompany(store.products, companyId).map((p) => p.category).filter(Boolean))];
+    categories(companyId: number): Promise<string[]> {
+      return read((s) => [...new Set(filterByCompany(s.products, companyId).map((p) => p.category).filter(Boolean))]);
     },
   },
 
   bundles: {
-    all(companyId: number): BundleRow[] {
-      return filterByCompany(store.bundles, companyId).sort((a, b) => a.name.localeCompare(b.name));
+    all(companyId: number): Promise<BundleRow[]> {
+      return read((s) => filterByCompany(s.bundles, companyId).sort((a, b) => a.name.localeCompare(b.name)));
     },
-    getById(id: number) { return store.bundles.find((b) => b.id === id); },
-    insert(data: Partial<BundleRow>, items?: { product_id: number; quantity_per_unit: number; unit_type: string }[]): BundleRow {
-      const row: BundleRow = {
-        id: store.next_ids.bundles++, company_id: data.company_id || 1,
-        name: data.name || '', description: data.description || '', category: data.category || '',
-        default_height_ft: data.default_height_ft || 9,
-        price_per_linear_ft: data.price_per_linear_ft || 0,
-        glass_type: data.glass_type || '', glass_thickness: data.glass_thickness || '',
-        frame_type: data.frame_type || '', door_options: data.door_options || '',
-        standard_lead_time_days: data.standard_lead_time_days || 14,
-        install_labor_hours_per_ft: data.install_labor_hours_per_ft || 0.5,
-        created_at: now(),
-      };
-      store.bundles.push(row);
-      if (items) {
-        for (const item of items) {
-          store.bundle_items.push({ id: store.next_ids.bundle_items++, bundle_id: row.id, ...item });
+    getById(id: number): Promise<BundleRow | undefined> { return read((s) => s.bundles.find((b) => b.id === id)); },
+    insert(data: Partial<BundleRow>, items?: { product_id: number; quantity_per_unit: number; unit_type: string }[]): Promise<BundleRow> {
+      return write((s) => {
+        const row: BundleRow = {
+          id: s.next_ids.bundles++, company_id: data.company_id || 1,
+          name: data.name || '', description: data.description || '', category: data.category || '',
+          default_height_ft: data.default_height_ft || 9,
+          price_per_linear_ft: data.price_per_linear_ft || 0,
+          glass_type: data.glass_type || '', glass_thickness: data.glass_thickness || '',
+          frame_type: data.frame_type || '', door_options: data.door_options || '',
+          standard_lead_time_days: data.standard_lead_time_days || 14,
+          install_labor_hours_per_ft: data.install_labor_hours_per_ft || 0.5,
+          created_at: now(),
+        };
+        s.bundles.push(row);
+        if (items) {
+          for (const item of items) {
+            s.bundle_items.push({ id: s.next_ids.bundle_items++, bundle_id: row.id, ...item });
+          }
         }
-      }
-      saveStore(); return row;
+        return row;
+      });
     },
   },
 
   invoices: {
-    all(companyId: number, filter?: { status?: string; client_id?: number; search?: string; type?: string }): InvoiceRow[] {
-      let list = store.invoices.filter((i) => i.company_id === companyId);
-      if (filter?.status) list = list.filter((i) => i.status === filter.status);
-      if (filter?.client_id) list = list.filter((i) => i.client_id === filter.client_id);
-      if (filter?.type) list = list.filter((i) => i.type === filter.type);
-      if (filter?.search) {
-        const s = filter.search.toLowerCase();
-        const cm = new Map(store.clients.map((c) => [c.id, c]));
-        list = list.filter((i) => i.invoice_number.toLowerCase().includes(s) || (cm.get(i.client_id)?.name || '').toLowerCase().includes(s));
-      }
-      const cm = new Map(store.clients.map((c) => [c.id, c]));
-      for (const inv of list) {
-        inv.client_name = cm.get(inv.client_id)?.name;
-        inv.items = store.invoice_items.filter((ii) => ii.invoice_id === inv.id).sort((a, b) => a.sort_order - b.sort_order);
-        inv.payments = store.payments.filter((p) => p.invoice_id === inv.id);
-      }
-      return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    all(companyId: number, filter?: { status?: string; client_id?: number; search?: string; type?: string }): Promise<InvoiceRow[]> {
+      return read((s) => {
+        let list = s.invoices.filter((i) => i.company_id === companyId);
+        if (filter?.status) list = list.filter((i) => i.status === filter.status);
+        if (filter?.client_id) list = list.filter((i) => i.client_id === filter.client_id);
+        if (filter?.type) list = list.filter((i) => i.type === filter.type);
+        if (filter?.search) {
+          const q = filter.search.toLowerCase();
+          const cm = new Map(s.clients.map((c) => [c.id, c]));
+          list = list.filter((i) => i.invoice_number.toLowerCase().includes(q) || (cm.get(i.client_id)?.name || '').toLowerCase().includes(q));
+        }
+        const cm = new Map(s.clients.map((c) => [c.id, c]));
+        for (const inv of list) {
+          inv.client_name = cm.get(inv.client_id)?.name;
+          inv.items = s.invoice_items.filter((ii) => ii.invoice_id === inv.id).sort((a, b) => a.sort_order - b.sort_order);
+          inv.payments = s.payments.filter((p) => p.invoice_id === inv.id);
+        }
+        return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      });
     },
-    getById(id: number): InvoiceRow | undefined {
-      const inv = store.invoices.find((i) => i.id === id);
-      if (!inv) return undefined;
-      const client = store.clients.find((c) => c.id === inv.client_id);
-      inv.client_name = client?.name;
-      inv.items = store.invoice_items.filter((ii) => ii.invoice_id === id).sort((a, b) => a.sort_order - b.sort_order);
-      inv.payments = store.payments.filter((p) => p.invoice_id === id);
-      return inv;
+    getById(id: number): Promise<InvoiceRow | undefined> {
+      return read((s) => assembleInvoice(s, id));
     },
     insert(companyId: number, data: {
       client_id: number; type?: string; issue_date: string; due_date: string;
       items: { product_id?: number | null; description: string; quantity: number; unit_price: number }[];
       tax_rate?: number; discount_type?: string; discount_value?: number;
       shipping?: number; notes?: string; terms?: string; visual_project_id?: number | null;
-    }): InvoiceRow {
-      const co = store.companies.find((c) => c.id === companyId)!;
-      const num = co.invoice_next_number;
-      const prefix = data.type === 'estimate' ? 'EST-' : co.invoice_prefix;
-      const invoiceNumber = `${prefix}${String(num).padStart(4, '0')}`;
+    }): Promise<InvoiceRow> {
+      return write((s) => {
+        const co = s.companies.find((c) => c.id === companyId)!;
+        const num = co.invoice_next_number;
+        const prefix = data.type === 'estimate' ? 'EST-' : co.invoice_prefix;
+        const invoiceNumber = `${prefix}${String(num).padStart(4, '0')}`;
 
-      co.invoice_next_number = num + 1;
-      const idx = store.companies.findIndex((c) => c.id === companyId);
-      store.companies[idx] = co;
+        co.invoice_next_number = num + 1;
+        const idx = s.companies.findIndex((c) => c.id === companyId);
+        s.companies[idx] = co;
 
-      const rate = data.tax_rate ?? co.default_tax_rate;
-      const discType = data.discount_type || 'none';
-      const discValue = data.discount_value || 0;
-      let subtotal = 0;
-      for (const item of data.items) subtotal += (item.quantity || 0) * (item.unit_price || 0);
-      let discAmt = 0;
-      if (discType === 'percent') discAmt = subtotal * (discValue / 100);
-      else if (discType === 'fixed') discAmt = discValue;
-      const after = subtotal - discAmt;
-      const taxAmt = after * (rate / 100);
-      const total = after + taxAmt + (data.shipping || 0);
-
-      const row: InvoiceRow = {
-        id: store.next_ids.invoices++, company_id: companyId, client_id: data.client_id,
-        invoice_number: invoiceNumber, type: (data.type as InvoiceRow['type']) || 'invoice',
-        issue_date: data.issue_date, due_date: data.due_date, status: 'draft',
-        subtotal: Math.round(subtotal * 100) / 100,
-        discount_type: discType, discount_value: discValue,
-        discount_amount: Math.round(discAmt * 100) / 100,
-        tax_rate: rate, tax_amount: Math.round(taxAmt * 100) / 100,
-        shipping: data.shipping || 0, total: Math.round(total * 100) / 100,
-        notes: data.notes || co.default_notes, terms: data.terms || co.default_terms,
-        converted_invoice_id: null, visual_project_id: data.visual_project_id || null,
-        created_at: now(), updated_at: now(),
-      };
-      store.invoices.push(row);
-      for (let i = 0; i < data.items.length; i++) {
-        const it = data.items[i];
-        store.invoice_items.push({
-          id: store.next_ids.invoice_items++, invoice_id: row.id,
-          product_id: it.product_id || null, description: it.description,
-          quantity: it.quantity, unit_price: it.unit_price,
-          amount: Math.round(it.quantity * it.unit_price * 100) / 100, sort_order: i,
-        });
-      }
-      saveStore(); return this.getById(row.id)!;
-    },
-    update(id: number, data: Partial<InvoiceRow> & { items?: { product_id?: number | null; description: string; quantity: number; unit_price: number }[] }): InvoiceRow | null {
-      const idx = store.invoices.findIndex((i) => i.id === id);
-      if (idx === -1) return null;
-      const existing = store.invoices[idx];
-      if (data.items) {
+        const rate = data.tax_rate ?? co.default_tax_rate;
+        const discType = data.discount_type || 'none';
+        const discValue = data.discount_value || 0;
         let subtotal = 0;
-        for (const it of data.items) subtotal += (it.quantity || 0) * (it.unit_price || 0);
-        const rate = data.tax_rate ?? existing.tax_rate;
-        const dt = data.discount_type || existing.discount_type;
-        const dv = data.discount_value ?? existing.discount_value;
-        let da = 0;
-        if (dt === 'percent') da = subtotal * (dv / 100);
-        else if (dt === 'fixed') da = dv;
-        const after = subtotal - da;
-        data.subtotal = Math.round(subtotal * 100) / 100;
-        data.tax_amount = Math.round(after * (rate / 100) * 100) / 100;
-        data.discount_amount = Math.round(da * 100) / 100;
-        data.total = Math.round((after + data.tax_amount + (data.shipping ?? existing.shipping)) * 100) / 100;
-      }
-      const updated = { ...existing, ...data, id, updated_at: now() };
-      store.invoices[idx] = updated;
-      if (data.items) {
-        store.invoice_items = store.invoice_items.filter((ii) => ii.invoice_id !== id);
+        for (const item of data.items) subtotal += (item.quantity || 0) * (item.unit_price || 0);
+        let discAmt = 0;
+        if (discType === 'percent') discAmt = subtotal * (discValue / 100);
+        else if (discType === 'fixed') discAmt = discValue;
+        const after = subtotal - discAmt;
+        const taxAmt = after * (rate / 100);
+        const total = after + taxAmt + (data.shipping || 0);
+
+        const row: InvoiceRow = {
+          id: s.next_ids.invoices++, company_id: companyId, client_id: data.client_id,
+          invoice_number: invoiceNumber, type: (data.type as InvoiceRow['type']) || 'invoice',
+          issue_date: data.issue_date, due_date: data.due_date, status: 'draft',
+          subtotal: Math.round(subtotal * 100) / 100,
+          discount_type: discType, discount_value: discValue,
+          discount_amount: Math.round(discAmt * 100) / 100,
+          tax_rate: rate, tax_amount: Math.round(taxAmt * 100) / 100,
+          shipping: data.shipping || 0, total: Math.round(total * 100) / 100,
+          notes: data.notes || co.default_notes, terms: data.terms || co.default_terms,
+          converted_invoice_id: null, visual_project_id: data.visual_project_id || null,
+          created_at: now(), updated_at: now(),
+        };
+        s.invoices.push(row);
         for (let i = 0; i < data.items.length; i++) {
           const it = data.items[i];
-          store.invoice_items.push({
-            id: store.next_ids.invoice_items++, invoice_id: id,
+          s.invoice_items.push({
+            id: s.next_ids.invoice_items++, invoice_id: row.id,
             product_id: it.product_id || null, description: it.description,
             quantity: it.quantity, unit_price: it.unit_price,
             amount: Math.round(it.quantity * it.unit_price * 100) / 100, sort_order: i,
           });
         }
-      }
-      saveStore(); return this.getById(id) || null;
+        return assembleInvoice(s, row.id)!;
+      });
     },
-    delete(id: number): boolean {
-      const idx = store.invoices.findIndex((i) => i.id === id);
-      if (idx === -1) return false;
-      store.invoices.splice(idx, 1);
-      store.invoice_items = store.invoice_items.filter((ii) => ii.invoice_id !== id);
-      store.payments = store.payments.filter((p) => p.invoice_id !== id);
-      saveStore(); return true;
+    update(id: number, data: Partial<InvoiceRow> & { items?: { product_id?: number | null; description: string; quantity: number; unit_price: number }[] }): Promise<InvoiceRow | null> {
+      return write((s) => {
+        const idx = s.invoices.findIndex((i) => i.id === id);
+        if (idx === -1) return null;
+        const existing = s.invoices[idx];
+        if (data.items) {
+          let subtotal = 0;
+          for (const it of data.items) subtotal += (it.quantity || 0) * (it.unit_price || 0);
+          const rate = data.tax_rate ?? existing.tax_rate;
+          const dt = data.discount_type || existing.discount_type;
+          const dv = data.discount_value ?? existing.discount_value;
+          let da = 0;
+          if (dt === 'percent') da = subtotal * (dv / 100);
+          else if (dt === 'fixed') da = dv;
+          const after = subtotal - da;
+          data.subtotal = Math.round(subtotal * 100) / 100;
+          data.tax_amount = Math.round(after * (rate / 100) * 100) / 100;
+          data.discount_amount = Math.round(da * 100) / 100;
+          data.total = Math.round((after + data.tax_amount + (data.shipping ?? existing.shipping)) * 100) / 100;
+        }
+        const updated = { ...existing, ...data, id, updated_at: now() };
+        s.invoices[idx] = updated;
+        if (data.items) {
+          s.invoice_items = s.invoice_items.filter((ii) => ii.invoice_id !== id);
+          for (let i = 0; i < data.items.length; i++) {
+            const it = data.items[i];
+            s.invoice_items.push({
+              id: s.next_ids.invoice_items++, invoice_id: id,
+              product_id: it.product_id || null, description: it.description,
+              quantity: it.quantity, unit_price: it.unit_price,
+              amount: Math.round(it.quantity * it.unit_price * 100) / 100, sort_order: i,
+            });
+          }
+        }
+        return assembleInvoice(s, id) || null;
+      });
     },
-    convertToInvoice(estimateId: number): InvoiceRow | null {
-      const estimate = this.getById(estimateId);
-      if (!estimate || estimate.type !== 'estimate') return null;
-      const co = store.companies.find((c) => c.id === estimate.company_id)!;
-      const num = co.invoice_next_number;
-      const invNum = `${co.invoice_prefix}${String(num).padStart(4, '0')}`;
-      co.invoice_next_number = num + 1;
-      const idxC = store.companies.findIndex((c) => c.id === estimate.company_id);
-      store.companies[idxC] = co;
-      const row: InvoiceRow = {
-        id: store.next_ids.invoices++, company_id: estimate.company_id, client_id: estimate.client_id,
-        invoice_number: invNum, type: 'invoice', issue_date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + co.default_due_days * 86400000).toISOString().split('T')[0],
-        status: 'draft', subtotal: estimate.subtotal, discount_type: estimate.discount_type,
-        discount_value: estimate.discount_value, discount_amount: estimate.discount_amount,
-        tax_rate: estimate.tax_rate, tax_amount: estimate.tax_amount,
-        shipping: estimate.shipping, total: estimate.total,
-        notes: estimate.notes, terms: estimate.terms,
-        converted_invoice_id: null, visual_project_id: estimate.visual_project_id,
-        created_at: now(), updated_at: now(),
-      };
-      store.invoices.push(row);
-      for (const it of (estimate.items || [])) {
-        store.invoice_items.push({
-          id: store.next_ids.invoice_items++, invoice_id: row.id,
-          product_id: it.product_id, description: it.description,
-          quantity: it.quantity, unit_price: it.unit_price,
-          amount: it.amount, sort_order: it.sort_order,
-        });
-      }
-      // Update estimate
-      const estIdx = store.invoices.findIndex((i) => i.id === estimateId);
-      store.invoices[estIdx].status = 'converted';
-      store.invoices[estIdx].converted_invoice_id = row.id;
-      store.invoices[estIdx].updated_at = now();
-      saveStore();
-      return row;
+    delete(id: number): Promise<boolean> {
+      return write((s) => {
+        const idx = s.invoices.findIndex((i) => i.id === id);
+        if (idx === -1) return false;
+        s.invoices.splice(idx, 1);
+        s.invoice_items = s.invoice_items.filter((ii) => ii.invoice_id !== id);
+        s.payments = s.payments.filter((p) => p.invoice_id !== id);
+        return true;
+      });
+    },
+    convertToInvoice(estimateId: number): Promise<InvoiceRow | null> {
+      return write((s) => {
+        const estimate = assembleInvoice(s, estimateId);
+        if (!estimate || estimate.type !== 'estimate') return null;
+        const co = s.companies.find((c) => c.id === estimate.company_id)!;
+        const num = co.invoice_next_number;
+        const invNum = `${co.invoice_prefix}${String(num).padStart(4, '0')}`;
+        co.invoice_next_number = num + 1;
+        const idxC = s.companies.findIndex((c) => c.id === estimate.company_id);
+        s.companies[idxC] = co;
+        const row: InvoiceRow = {
+          id: s.next_ids.invoices++, company_id: estimate.company_id, client_id: estimate.client_id,
+          invoice_number: invNum, type: 'invoice', issue_date: new Date().toISOString().split('T')[0],
+          due_date: new Date(Date.now() + co.default_due_days * 86400000).toISOString().split('T')[0],
+          status: 'draft', subtotal: estimate.subtotal, discount_type: estimate.discount_type,
+          discount_value: estimate.discount_value, discount_amount: estimate.discount_amount,
+          tax_rate: estimate.tax_rate, tax_amount: estimate.tax_amount,
+          shipping: estimate.shipping, total: estimate.total,
+          notes: estimate.notes, terms: estimate.terms,
+          converted_invoice_id: null, visual_project_id: estimate.visual_project_id,
+          created_at: now(), updated_at: now(),
+        };
+        s.invoices.push(row);
+        for (const it of (estimate.items || [])) {
+          s.invoice_items.push({
+            id: s.next_ids.invoice_items++, invoice_id: row.id,
+            product_id: it.product_id, description: it.description,
+            quantity: it.quantity, unit_price: it.unit_price,
+            amount: it.amount, sort_order: it.sort_order,
+          });
+        }
+        // Update estimate
+        const estIdx = s.invoices.findIndex((i) => i.id === estimateId);
+        s.invoices[estIdx].status = 'converted';
+        s.invoices[estIdx].converted_invoice_id = row.id;
+        s.invoices[estIdx].updated_at = now();
+        return row;
+      });
     },
 
-    updateStatus(id: number, status: string): InvoiceRow | null {
-      const idx = store.invoices.findIndex((i) => i.id === id);
-      if (idx === -1) return null;
-      store.invoices[idx].status = status as InvoiceRow['status'];
-      store.invoices[idx].updated_at = now();
-      saveStore();
-      return this.getById(id)!;
+    updateStatus(id: number, status: string): Promise<InvoiceRow | null> {
+      return write((s) => {
+        const idx = s.invoices.findIndex((i) => i.id === id);
+        if (idx === -1) return null;
+        s.invoices[idx].status = status as InvoiceRow['status'];
+        s.invoices[idx].updated_at = now();
+        return assembleInvoice(s, id)!;
+      });
     },
   },
 
   payments: {
-    all(): PaymentRow[] {
-      return [...store.payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+    all(): Promise<PaymentRow[]> {
+      return read((s) => [...s.payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date)));
     },
 
-    byInvoice(invoiceId: number): PaymentRow[] {
-      return store.payments.filter((p) => p.invoice_id === invoiceId).sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+    byInvoice(invoiceId: number): Promise<PaymentRow[]> {
+      return read((s) => s.payments.filter((p) => p.invoice_id === invoiceId).sort((a, b) => b.payment_date.localeCompare(a.payment_date)));
     },
-    insert(data: { invoice_id: number; amount: number; method: string; reference?: string; payment_date: string; notes?: string }): PaymentRow {
-      const row: PaymentRow = {
-        id: store.next_ids.payments++, invoice_id: data.invoice_id,
-        amount: data.amount, method: data.method, reference: data.reference || '',
-        payment_date: data.payment_date, notes: data.notes || '', created_at: now(),
-      };
-      store.payments.push(row);
-      // Auto-update invoice status if fully paid
-      const inv = store.invoices.find((i) => i.id === data.invoice_id);
-      if (inv) {
-        const totalPaid = store.payments.filter((p) => p.invoice_id === inv.id).reduce((s, p) => s + p.amount, 0);
-        if (totalPaid >= inv.total) {
-          inv.status = 'paid';
-          inv.updated_at = now();
+    insert(data: { invoice_id: number; amount: number; method: string; reference?: string; payment_date: string; notes?: string }): Promise<PaymentRow> {
+      return write((s) => {
+        const row: PaymentRow = {
+          id: s.next_ids.payments++, invoice_id: data.invoice_id,
+          amount: data.amount, method: data.method, reference: data.reference || '',
+          payment_date: data.payment_date, notes: data.notes || '', created_at: now(),
+        };
+        s.payments.push(row);
+        // Auto-update invoice status if fully paid
+        const inv = s.invoices.find((i) => i.id === data.invoice_id);
+        if (inv) {
+          const totalPaid = s.payments.filter((p) => p.invoice_id === inv.id).reduce((sum, p) => sum + p.amount, 0);
+          if (totalPaid >= inv.total) {
+            inv.status = 'paid';
+            inv.updated_at = now();
+          }
         }
-      }
-      saveStore(); return row;
+        return row;
+      });
     },
-    delete(id: number): boolean {
-      const idx = store.payments.findIndex((p) => p.id === id);
-      if (idx === -1) return false;
-      store.payments.splice(idx, 1); saveStore(); return true;
+    delete(id: number): Promise<boolean> {
+      return write((s) => {
+        const idx = s.payments.findIndex((p) => p.id === id);
+        if (idx === -1) return false;
+        s.payments.splice(idx, 1);
+        return true;
+      });
     },
   },
 
   visual: {
-    all(companyId: number): VisualProjectRow[] {
-      return filterByCompany(store.visual_projects, companyId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    all(companyId: number): Promise<VisualProjectRow[]> {
+      return read((s) => filterByCompany(s.visual_projects, companyId).sort((a, b) => b.created_at.localeCompare(a.created_at)));
     },
-    getById(id: number) { return store.visual_projects.find((v) => v.id === id); },
-    insert(data: Partial<VisualProjectRow>): VisualProjectRow {
-      const row: VisualProjectRow = {
-        id: store.next_ids.visual_projects++, company_id: data.company_id || 1,
-        client_id: data.client_id || 0, name: data.name || '', photo_url: data.photo_url || '',
-        drawing_data: data.drawing_data || '[]', floor_plan_data: data.floor_plan_data || '[]',
-        scale_pixels_per_foot: data.scale_pixels_per_foot || 0,
-        total_glass_linear_ft: 0, total_sheetrock_linear_ft: 0, total_doors: 0,
-        wall_segments: data.wall_segments || '[]', status: 'draft',
-        created_at: now(), updated_at: now(),
-      };
-      store.visual_projects.push(row); saveStore(); return row;
+    getById(id: number): Promise<VisualProjectRow | undefined> { return read((s) => s.visual_projects.find((v) => v.id === id)); },
+    insert(data: Partial<VisualProjectRow>): Promise<VisualProjectRow> {
+      return write((s) => {
+        const row: VisualProjectRow = {
+          id: s.next_ids.visual_projects++, company_id: data.company_id || 1,
+          client_id: data.client_id || 0, name: data.name || '', photo_url: data.photo_url || '',
+          drawing_data: data.drawing_data || '[]', floor_plan_data: data.floor_plan_data || '[]',
+          scale_pixels_per_foot: data.scale_pixels_per_foot || 0,
+          total_glass_linear_ft: 0, total_sheetrock_linear_ft: 0, total_doors: 0,
+          wall_segments: data.wall_segments || '[]', status: 'draft',
+          created_at: now(), updated_at: now(),
+        };
+        s.visual_projects.push(row);
+        return row;
+      });
     },
-    update(id: number, data: Partial<VisualProjectRow>): VisualProjectRow | null {
-      const idx = store.visual_projects.findIndex((v) => v.id === id);
-      if (idx === -1) return null;
-      store.visual_projects[idx] = { ...store.visual_projects[idx], ...data, id, updated_at: now() };
-      saveStore(); return store.visual_projects[idx];
+    update(id: number, data: Partial<VisualProjectRow>): Promise<VisualProjectRow | null> {
+      return write((s) => {
+        const idx = s.visual_projects.findIndex((v) => v.id === id);
+        if (idx === -1) return null;
+        s.visual_projects[idx] = { ...s.visual_projects[idx], ...data, id, updated_at: now() };
+        return s.visual_projects[idx];
+      });
     },
-    delete(id: number): boolean {
-      const idx = store.visual_projects.findIndex((v) => v.id === id);
-      if (idx === -1) return false;
-      store.visual_projects.splice(idx, 1); saveStore(); return true;
+    delete(id: number): Promise<boolean> {
+      return write((s) => {
+        const idx = s.visual_projects.findIndex((v) => v.id === id);
+        if (idx === -1) return false;
+        s.visual_projects.splice(idx, 1);
+        return true;
+      });
     },
   },
 
   // ---- Jobs ----
   jobs: {
-    all(companyId: number): JobRow[] {
-      const list = store.jobs.filter((j) => j.company_id === companyId);
-      const cm = new Map(store.clients.map((c) => [c.id, c]));
-      for (const j of list) j.client_name = cm.get(j.client_id)?.name;
-      return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    all(companyId: number): Promise<JobRow[]> {
+      return read((s) => {
+        const list = s.jobs.filter((j) => j.company_id === companyId);
+        const cm = new Map(s.clients.map((c) => [c.id, c]));
+        for (const j of list) j.client_name = cm.get(j.client_id)?.name;
+        return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      });
     },
-    getById(id: number): JobRow | undefined {
-      const j = store.jobs.find((x) => x.id === id);
-      if (j) j.client_name = store.clients.find((c) => c.id === j.client_id)?.name;
-      return j;
+    getById(id: number): Promise<JobRow | undefined> {
+      return read((s) => {
+        const j = s.jobs.find((x) => x.id === id);
+        if (j) j.client_name = s.clients.find((c) => c.id === j.client_id)?.name;
+        return j;
+      });
     },
-    insert(data: Partial<JobRow>): JobRow {
-      const row: JobRow = {
-        id: store.next_ids.jobs++, company_id: data.company_id || 1,
-        client_id: data.client_id || 0, estimate_id: data.estimate_id || null,
-        invoice_id: data.invoice_id || null, name: data.name || '',
-        description: data.description || '', status: 'scheduled',
-        priority: data.priority || 'normal', start_date: data.start_date || '',
-        end_date: data.end_date || '', assigned_crew: data.assigned_crew || '',
-        job_site_address: data.job_site_address || '',
-        glass_types: data.glass_types || '', total_sq_ft: data.total_sq_ft || 0,
-        total_linear_ft: data.total_linear_ft || 0, door_count: data.door_count || 0,
-        notes: data.notes || '', created_at: now(), updated_at: now(),
-      };
-      store.jobs.push(row); saveStore(); return row;
+    insert(data: Partial<JobRow>): Promise<JobRow> {
+      return write((s) => {
+        const row: JobRow = {
+          id: s.next_ids.jobs++, company_id: data.company_id || 1,
+          client_id: data.client_id || 0, estimate_id: data.estimate_id || null,
+          invoice_id: data.invoice_id || null, name: data.name || '',
+          description: data.description || '', status: 'scheduled',
+          priority: data.priority || 'normal', start_date: data.start_date || '',
+          end_date: data.end_date || '', assigned_crew: data.assigned_crew || '',
+          job_site_address: data.job_site_address || '',
+          glass_types: data.glass_types || '', total_sq_ft: data.total_sq_ft || 0,
+          total_linear_ft: data.total_linear_ft || 0, door_count: data.door_count || 0,
+          notes: data.notes || '', created_at: now(), updated_at: now(),
+        };
+        s.jobs.push(row);
+        return row;
+      });
     },
-    update(id: number, data: Partial<JobRow>): JobRow | null {
-      const idx = store.jobs.findIndex((j) => j.id === id);
-      if (idx === -1) return null;
-      store.jobs[idx] = { ...store.jobs[idx], ...data, id, updated_at: now() };
-      saveStore(); return store.jobs[idx];
+    update(id: number, data: Partial<JobRow>): Promise<JobRow | null> {
+      return write((s) => {
+        const idx = s.jobs.findIndex((j) => j.id === id);
+        if (idx === -1) return null;
+        s.jobs[idx] = { ...s.jobs[idx], ...data, id, updated_at: now() };
+        return s.jobs[idx];
+      });
     },
-    delete(id: number): boolean {
-      const idx = store.jobs.findIndex((j) => j.id === id);
-      if (idx === -1) return false;
-      store.jobs.splice(idx, 1); saveStore(); return true;
+    delete(id: number): Promise<boolean> {
+      return write((s) => {
+        const idx = s.jobs.findIndex((j) => j.id === id);
+        if (idx === -1) return false;
+        s.jobs.splice(idx, 1);
+        return true;
+      });
     },
   },
 
   // Dashboard stats
   stats(companyId: number) {
-    const invoices = store.invoices.filter((i) => i.company_id === companyId && i.type === 'invoice');
-    const estimates = store.invoices.filter((i) => i.company_id === companyId && i.type === 'estimate');
-    const now = new Date();
-    const thisMonth = invoices.filter((i) => {
-      const d = new Date(i.issue_date);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
-    const lastMonth = invoices.filter((i) => {
-      const d = new Date(i.issue_date);
-      const lm = new Date(now.getFullYear(), now.getMonth() - 1);
-      return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear();
-    });
-    const ytd = invoices.filter((i) => new Date(i.issue_date).getFullYear() === now.getFullYear());
-    const outstanding = invoices.filter((i) => i.status === 'sent' || i.status === 'overdue');
-    const overdue = invoices.filter((i) => i.status === 'overdue');
-    const revenueThisMonth = thisMonth.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0);
-    const revenueLastMonth = lastMonth.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0);
-    const revenueYTD = ytd.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0);
-    const outstandingTotal = outstanding.reduce((s, i) => {
-      const paid = store.payments.filter((p) => p.invoice_id === i.id).reduce((sp, p) => sp + p.amount, 0);
-      return s + (i.total - paid);
-    }, 0);
-    const estimatesPending = estimates.filter((i) => i.status === 'sent').length;
+    return read((s) => {
+      const invoices = s.invoices.filter((i) => i.company_id === companyId && i.type === 'invoice');
+      const estimates = s.invoices.filter((i) => i.company_id === companyId && i.type === 'estimate');
+      const nowD = new Date();
+      const thisMonth = invoices.filter((i) => {
+        const d = new Date(i.issue_date);
+        return d.getMonth() === nowD.getMonth() && d.getFullYear() === nowD.getFullYear();
+      });
+      const lastMonth = invoices.filter((i) => {
+        const d = new Date(i.issue_date);
+        const lm = new Date(nowD.getFullYear(), nowD.getMonth() - 1);
+        return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear();
+      });
+      const ytd = invoices.filter((i) => new Date(i.issue_date).getFullYear() === nowD.getFullYear());
+      const outstanding = invoices.filter((i) => i.status === 'sent' || i.status === 'overdue');
+      const overdue = invoices.filter((i) => i.status === 'overdue');
+      const revenueThisMonth = thisMonth.filter((i) => i.status === 'paid').reduce((sum, i) => sum + i.total, 0);
+      const revenueLastMonth = lastMonth.filter((i) => i.status === 'paid').reduce((sum, i) => sum + i.total, 0);
+      const revenueYTD = ytd.filter((i) => i.status === 'paid').reduce((sum, i) => sum + i.total, 0);
+      const outstandingTotal = outstanding.reduce((sum, i) => {
+        const paid = s.payments.filter((p) => p.invoice_id === i.id).reduce((sp, p) => sp + p.amount, 0);
+        return sum + (i.total - paid);
+      }, 0);
+      const estimatesPending = estimates.filter((i) => i.status === 'sent').length;
 
-    return {
-      totalClients: filterByCompany(store.clients, companyId).length,
-      totalProducts: filterByCompany(store.products, companyId).length,
-      totalInvoices: invoices.length,
-      totalEstimates: estimates.length,
-      revenueThisMonth,
-      revenueLastMonth,
-      revenueYTD,
-      outstandingTotal,
-      overdueCount: overdue.length,
-      estimatesPending,
-      recentInvoices: invoices.slice(0, 5).map((i) => {
-        const client = store.clients.find((c) => c.id === i.client_id);
-        return { ...i, client_name: client?.name };
-      }),
-    };
+      return {
+        totalClients: filterByCompany(s.clients, companyId).length,
+        totalProducts: filterByCompany(s.products, companyId).length,
+        totalInvoices: invoices.length,
+        totalEstimates: estimates.length,
+        revenueThisMonth,
+        revenueLastMonth,
+        revenueYTD,
+        outstandingTotal,
+        overdueCount: overdue.length,
+        estimatesPending,
+        recentInvoices: invoices.slice(0, 5).map((i) => {
+          const client = s.clients.find((c) => c.id === i.client_id);
+          return { ...i, client_name: client?.name };
+        }),
+      };
+    });
   },
 };
