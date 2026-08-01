@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { currentCompanyId } from '@/lib/auth-server';
 
-// Always run per-request against the live datastore (never statically prerender).
 export const dynamic = 'force-dynamic';
 
+// Multi-tenant: only ever return the signed-in user's own company.
 export async function GET() {
-  return NextResponse.json(await db.companies.all());
+  const companyId = await currentCompanyId();
+  if (companyId == null) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  const company = await db.companies.getById(companyId);
+  return NextResponse.json(company ? [company] : []);
 }

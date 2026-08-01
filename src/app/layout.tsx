@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import Sidebar from '@/components/Sidebar';
+import AppChrome from '@/components/AppChrome';
 
 export const metadata: Metadata = {
   title: 'Eagles Glass — Business Manager',
@@ -23,12 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         `}} />
       </head>
       <body>
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 ml-64 p-8 bg-slate-50 min-h-screen transition-colors">
-            {children}
-          </main>
-        </div>
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   );

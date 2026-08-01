@@ -4,18 +4,19 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
-interface Company { id: number; name: string; slug: string; }
+interface Me {
+  user: { id: number; name: string; email: string; role: string };
+  company: { id: number; name: string } | null;
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [activeCompanyId, setActiveCompanyId] = useState<number>(1);
+  const [me, setMe] = useState<Me | null>(null);
 
   const [dark, setDark] = useState(false);
   useEffect(() => {
-    const isDark = document.documentElement.classList.contains('dark');
-    setDark(isDark);
+    setDark(document.documentElement.classList.contains('dark'));
   }, []);
 
   const toggleTheme = () => {
@@ -32,14 +33,15 @@ export default function Sidebar() {
   };
 
   useEffect(() => {
-    fetch('/api/companies').then((r) => r.json()).then((d) => setCompanies(Array.isArray(d) ? d : [])).catch(() => {});
-    const saved = localStorage.getItem('activeCompanyId');
-    if (saved) setActiveCompanyId(parseInt(saved));
-  }, []);
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((d) => setMe(d))
+      .catch(() => { router.push('/login'); });
+  }, [router]);
 
-  const switchCompany = (id: number) => {
-    setActiveCompanyId(id);
-    localStorage.setItem('activeCompanyId', String(id));
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    router.push('/login');
     router.refresh();
   };
 
@@ -53,25 +55,16 @@ export default function Sidebar() {
     { href: '/payments', label: 'Payments', icon: '💰' },
     { href: '/visual-estimator', label: 'Visual Estimator', icon: '🎨' },
     { href: '/shape-calculator', label: 'Shape Calculator', icon: '📐' },
-    { href: '/reports', label: 'Reports', icon: '📊' },
     { href: '/settings', label: 'Settings', icon: '⚙' },
   ];
 
-  const isActive = (href: string) => href === '/' ? pathname === '/' : pathname.startsWith(href);
+  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
   return (
     <aside className="no-print w-64 h-screen bg-navy-900 text-white flex flex-col fixed left-0 top-0 overflow-y-auto">
       <div className="px-4 py-4 border-b border-navy-700">
-        <h1 className="text-sm font-bold tracking-tight opacity-80 mb-2">Eagles Glass Manager</h1>
-        <select
-          className="w-full rounded-lg bg-navy-800 text-white text-xs px-3 py-2 border border-navy-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-          value={activeCompanyId}
-          onChange={(e) => switchCompany(parseInt(e.target.value))}
-        >
-          {companies.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+        <h1 className="text-sm font-bold tracking-tight opacity-80">Eagles Glass Manager</h1>
+        <p className="text-xs text-slate-400 mt-1 truncate">{me?.company?.name || '…'}</p>
       </div>
 
       <nav className="flex-1 px-3 py-2 space-y-0.5">
@@ -89,11 +82,21 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-4 py-3 border-t border-navy-700 flex items-center justify-between">
-        <span className="text-xs text-slate-500">SaaS v2.0</span>
-        <button onClick={toggleTheme} className="text-sm hover:scale-110 transition-transform" title={dark ? 'Switch to light' : 'Switch to dark'}>
-          {dark ? '☀️' : '🌙'}
-        </button>
+      <div className="px-4 py-3 border-t border-navy-700 space-y-2">
+        {me?.user && (
+          <div className="text-xs text-slate-400 truncate" title={me.user.email}>
+            {me.user.name || me.user.email}
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <button onClick={logout} className="text-xs text-slate-300 hover:text-white underline-offset-2 hover:underline">
+            Log out
+          </button>
+          <button onClick={toggleTheme} className="text-sm hover:scale-110 transition-transform" title={dark ? 'Switch to light' : 'Switch to dark'}>
+            {dark ? '☀️' : '🌙'}
+          </button>
+        </div>
+        <div className="text-[10px] text-slate-600">SaaS v2.1</div>
       </div>
     </aside>
   );
