@@ -21,10 +21,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // The marketing homepage on the public domain stays public — next.config
-  // redirects glassestimate.app/ to /landing.html. Don't gate it.
-  if (pathname === '/' && host.includes('glassestimate.app')) {
-    return NextResponse.next();
+  // Homepage is auth-aware (this replaces the old next.config host redirect):
+  //  - signed in  -> the app dashboard (app/page.tsx)
+  //  - signed out on the public marketing domain -> the marketing landing page
+  //  - signed out anywhere else -> the login page
+  if (pathname === '/') {
+    const rootToken = req.cookies.get(SESSION_COOKIE)?.value;
+    const rootSession = await verifySessionToken(rootToken);
+    if (rootSession) return NextResponse.next();
+    if (host.includes('glassestimate.app')) {
+      return NextResponse.rewrite(new URL('/landing.html', req.url));
+    }
+    const homeLogin = req.nextUrl.clone();
+    homeLogin.pathname = '/login';
+    homeLogin.search = '';
+    return NextResponse.redirect(homeLogin);
   }
 
   // Everything else (app pages + data APIs) requires a valid session.
