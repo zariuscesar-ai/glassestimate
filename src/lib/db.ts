@@ -171,6 +171,16 @@ export interface JobRow {
   client_name?: string;
 }
 
+export interface UserRow {
+  id: number;
+  company_id: number;
+  email: string;
+  name: string;
+  password_hash: string;
+  role: 'owner' | 'member';
+  created_at: string;
+}
+
 interface StoreData {
   companies: CompanyRow[];
   clients: ClientRow[];
@@ -182,6 +192,7 @@ interface StoreData {
   payments: PaymentRow[];
   visual_projects: VisualProjectRow[];
   jobs: JobRow[];
+  users: UserRow[];
   next_ids: Record<string, number>;
 }
 
@@ -261,8 +272,19 @@ function defaultStore(): StoreData {
     payments: [],
     visual_projects: [],
     jobs: [],
-    next_ids: { companies: 2, clients: 1, products: 1, bundles: 1, bundle_items: 1, invoices: 1, invoice_items: 1, payments: 1, visual_projects: 1, jobs: 1 },
+    users: [],
+    next_ids: { companies: 2, clients: 1, products: 1, bundles: 1, bundle_items: 1, invoices: 1, invoice_items: 1, payments: 1, visual_projects: 1, jobs: 1, users: 1 },
   };
+}
+
+// Default glass catalog (products + bundles) that every new company/tenant is
+// seeded with, so a freshly created shop is immediately usable. Cloned from the
+// Eagles Glass seed in defaultStore().
+function catalogTemplates(): { products: Omit<ProductRow, 'id' | 'company_id'>[]; bundles: Omit<BundleRow, 'id' | 'company_id'>[] } {
+  const seed = defaultStore();
+  const products = seed.products.map(({ id, company_id, ...rest }) => rest);
+  const bundles = seed.bundles.map(({ id, company_id, ...rest }) => rest);
+  return { products, bundles };
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +391,16 @@ function normalize(data: StoreData): StoreData {
   const def = defaultStore();
   for (const k of Object.keys(def) as (keyof StoreData)[]) {
     if (!(k in data) || (data as any)[k] == null) (data as any)[k] = (def as any)[k];
+  }
+  // Backfill any next_ids counters added after the blob was first written
+  // (e.g. `users`), seeding each from the current max id so we never collide.
+  data.next_ids = data.next_ids || {};
+  for (const key of Object.keys(def.next_ids)) {
+    if (data.next_ids[key] == null) {
+      const arr = (data as any)[key] as { id: number }[] | undefined;
+      const maxId = Array.isArray(arr) && arr.length ? Math.max(...arr.map((r) => r.id || 0)) : 0;
+      data.next_ids[key] = maxId + 1;
+    }
   }
   return data;
 }
@@ -765,6 +797,13 @@ export const db = {
     all(): Promise<PaymentRow[]> {
       return read((s) => [...s.payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date)));
     },
+    // Company-scoped: only payments whose invoice belongs to this company.
+    allForCompany(companyId: number): Promise<PaymentRow[]> {
+      return read((s) => {
+        const invIds = new Set(s.invoices.filter((i) => i.company_id === companyId).map((i) => i.id));
+        return s.payments.filter((p) => invIds.has(p.invoice_id)).sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+      });
+    },
 
     byInvoice(invoiceId: number): Promise<PaymentRow[]> {
       return read((s) => s.payments.filter((p) => p.invoice_id === invoiceId).sort((a, b) => b.payment_date.localeCompare(a.payment_date)));
@@ -886,6 +925,91 @@ export const db = {
         if (idx === -1) return false;
         s.jobs.splice(idx, 1);
         return true;
+      });
+    },
+  },
+
+  // ---- Users (authentication) ----
+  users: {
+    getByEmail(email: string): Promise<UserRow | undefined> {
+      const e = email.trim().toLowerCase();
+      return read((s) => s.users.find((u) => u.email.toLowerCase() === e));
+    },
+    getById(id: number): Promise<UserRow | undefined> {
+      return read((s) => s.users.find((u) => u.id === id));
+    },
+    count(): Promise<number> {
+      return read((s) => s.users.length);
+    },
+    insert(data: { company_id: number; email: string; name: string; password_hash: string; role?: 'owner' | 'member' }): Promise<UserRow> {
+      return write((s) => {
+        const row: UserRow = {
+          id: s.next_ids.users++, company_id: data.company_id,
+          email: data.email.trim().toLowerCase(), name: data.name || '',
+          password_hash: data.password_hash, role: data.role || 'member',
+          created_at: now(),
+        };
+        s.users.push(row);
+        return row;
+      });
+    },
+    updatePassword(id: number, password_hash: string): Promise<boolean> {
+      return write((s) => {
+        const u = s.users.find((x) => x.id === id);
+        if (!u) return false;
+        u.password_hash = password_hash;
+        return true;
+      });
+    },
+  },
+
+  // ---- Tenants (multi-tenant signup + bootstrap) ----
+  tenants: {
+    // Atomically create a new company (seeded with the default glass catalog)
+    // plus its owner user, in a single persisted write.
+    create(data: { companyName: string; name: string; email: string; password_hash: string }): Promise<{ company: CompanyRow; user: UserRow }> {
+      return write((s) => {
+        const companyId = s.next_ids.companies++;
+        const slugBase = (data.companyName || 'company').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `company-${companyId}`;
+        const company: CompanyRow = {
+          id: companyId, name: data.companyName || 'My Company', slug: `${slugBase}-${companyId}`,
+          logo: '', address: '', phone: '', email: data.email.trim().toLowerCase(), website: '', tax_id: '',
+          invoice_prefix: 'INV-', invoice_next_number: 1,
+          default_tax_rate: 8.25, default_due_days: 30,
+          default_notes: 'Thank you for your business!',
+          default_terms: 'Payment due within 30 days. 50% deposit required to begin work.',
+          created_at: now(),
+        };
+        s.companies.push(company);
+        // Seed the default glass catalog for this tenant.
+        const tpl = catalogTemplates();
+        for (const p of tpl.products) s.products.push({ id: s.next_ids.products++, company_id: companyId, ...p });
+        for (const b of tpl.bundles) s.bundles.push({ id: s.next_ids.bundles++, company_id: companyId, ...b });
+        const user: UserRow = {
+          id: s.next_ids.users++, company_id: companyId,
+          email: data.email.trim().toLowerCase(), name: data.name || '',
+          password_hash: data.password_hash, role: 'owner', created_at: now(),
+        };
+        s.users.push(user);
+        return { company, user };
+      });
+    },
+    // One-time bootstrap: if the datastore has companies but NO users yet (the
+    // case immediately after auth ships onto the existing single-company store),
+    // create an owner login for the first company so its existing data stays
+    // reachable. Idempotent — a no-op once any user exists.
+    bootstrapOwner(data: { email: string; name: string; password_hash: string }): Promise<UserRow | null> {
+      return write((s) => {
+        if (s.users.length > 0) return null;
+        const company = s.companies.find((c) => c.id === 1) || s.companies[0];
+        if (!company) return null;
+        const user: UserRow = {
+          id: s.next_ids.users++, company_id: company.id,
+          email: data.email.trim().toLowerCase(), name: data.name || 'Owner',
+          password_hash: data.password_hash, role: 'owner', created_at: now(),
+        };
+        s.users.push(user);
+        return user;
       });
     },
   },

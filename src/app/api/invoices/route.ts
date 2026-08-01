@@ -1,22 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { currentCompanyId } from '@/lib/auth-server';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const companyId = await currentCompanyId();
+  if (companyId == null) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   const url = new URL(req.url);
   const status = url.searchParams.get('status') || undefined;
   const search = url.searchParams.get('search') || undefined;
   const clientId = url.searchParams.get('client_id') || undefined;
   const type = url.searchParams.get('type') || 'invoice';
-  return NextResponse.json(await db.invoices.all(1, { status, search, client_id: clientId ? parseInt(clientId) : undefined, type }));
+  return NextResponse.json(await db.invoices.all(companyId, { status, search, client_id: clientId ? parseInt(clientId) : undefined, type }));
 }
 
 export async function POST(req: Request) {
+  const companyId = await currentCompanyId();
+  if (companyId == null) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   const body = await req.json();
   const { client_id, issue_date, due_date, items, notes, terms, tax_rate, discount_type, discount_value, shipping, type } = body;
   if (!client_id || !issue_date || !due_date || !items?.length) {
     return NextResponse.json({ error: 'Client, dates, and at least one item are required' }, { status: 400 });
   }
-  const inv = await db.invoices.insert(body.company_id || 1, {
+  const inv = await db.invoices.insert(companyId, {
     client_id: parseInt(client_id),
     issue_date,
     due_date,
