@@ -4,13 +4,13 @@ import { db } from '@/lib/db';
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const status = url.searchParams.get('status') || undefined;
-  let list = db.jobs.all(1);
+  let list = await db.jobs.all(1);
   if (status) list = list.filter((j) => j.status === status);
   return NextResponse.json(list);
 }
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const job = db.jobs.insert({ ...body, company_id: 1 });
+  const job = await db.jobs.insert({ ...body, company_id: 1 });
   return NextResponse.json(job, { status: 201 });
 }
