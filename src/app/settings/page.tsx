@@ -97,6 +97,67 @@ export default function SettingsPage() {
           </div>
         </div>
       </form>
+
+      <div className="max-w-2xl mt-8">
+        <ChangePasswordCard />
+      </div>
+    </div>
+  );
+}
+
+function ChangePasswordCard() {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [ok, setOk] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg(''); setOk(false);
+    if (next.length < 8) { setMsg('New password must be at least 8 characters.'); return; }
+    if (next !== confirm) { setMsg('New password and confirmation do not match.'); return; }
+    setSaving(true);
+    try {
+      const r = await fetch('/api/auth/change-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { setMsg(data.error || 'Could not change password.'); return; }
+      setOk(true); setMsg('Password updated.');
+      setCurrent(''); setNext(''); setConfirm('');
+    } catch {
+      setMsg('Could not change password.');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="card p-6">
+      <h2 className="text-lg font-semibold mb-1">Account Security</h2>
+      <p className="text-xs text-slate-400 mb-4">Change your login password. You&apos;ll stay signed in on this device.</p>
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="label">Current Password</label>
+          <input className="input" type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">New Password</label>
+            <input className="input" type="password" autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Confirm New Password</label>
+            <input className="input" type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} />
+          </div>
+        </div>
+        <p className="text-xs text-slate-400">At least 8 characters.</p>
+        <div className="flex items-center gap-3">
+          <button type="submit" className="btn-primary" disabled={saving || !current || !next || !confirm}>{saving ? 'Updating...' : 'Update Password'}</button>
+          {msg && <span className={`text-sm ${ok ? 'text-green-600' : 'text-red-500'}`}>{msg}</span>}
+        </div>
+      </form>
     </div>
   );
 }
