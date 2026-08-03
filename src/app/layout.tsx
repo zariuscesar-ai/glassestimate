@@ -1,29 +1,32 @@
-import type { Metadata } from 'next';
-import './globals.css';
-import AppChrome from '@/components/AppChrome';
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { CookieBanner } from "@/components/CookieBanner";
+import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
 
 export const metadata: Metadata = {
-  title: 'Eagles Glass — Business Manager',
-  description: 'Client, product, invoice, estimate, and visual estimator for glass businesses',
+  title: "GlassEstimate — Close glass jobs on the first visit",
+  description:
+    "Photograph the opening, draw the system, show the client a realistic render, and hand them a priced proposal to sign — all in one visit. Built for small glass shops & solo contractors.",
+  keywords: ["glass estimation software", "shower glass estimator", "storefront estimator", "glazing software", "glass shop software"],
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://glassestimate.app"),
+  robots: { index: true, follow: true },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: `
-          (function() {
-            try {
-              var theme = localStorage.getItem('theme');
-              if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-              }
-            } catch(e) {}
-          })();
-        `}} />
-      </head>
-      <body>
-        <AppChrome>{children}</AppChrome>
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen bg-background font-sans antialiased">
+        {children}
+        <CookieBanner />
       </body>
     </html>
   );
