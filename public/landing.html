@@ -152,6 +152,9 @@
 </head>
 <body>
 
+<div style="background:linear-gradient(90deg,#0a2540,#123a63);color:#fff;text-align:center;padding:9px 16px;font-size:13.5px;font-weight:600;letter-spacing:.01em">
+  &#128274; Founding pricing &mdash; lock in $49/mo (or $79 for both) for life. Prices go up at launch.
+</div>
 <nav>
   <div class="wrap">
     <div class="logo"><span class="mk">◧</span> GlassEstimate</div>
@@ -163,7 +166,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:16px">
       <a href="/login" style="font-weight:600;font-size:14px;color:var(--accent);text-decoration:none">Log in</a>
-      <a href="#pricing" class="btn btn-primary" style="padding:10px 18px;font-size:14px">Start free trial</a>
+      <a href="#pricing" class="btn btn-primary" style="padding:10px 18px;font-size:14px">Claim founding price</a>
     </div>
   </div>
 </nav>
@@ -174,9 +177,9 @@
     <div>
       <span class="eyebrow">Built for small glass shops & solo contractors</span>
       <h1>Turn a job-site photo into a signed contract — before you leave the driveway.</h1>
-      <p class="lead">GlassEstimate lets you photograph the opening, draw the system on your iPad, show the client a realistic render, and hand them a priced proposal to sign — all in one visit.</p>
+      <p class="lead">GlassEstimate lets you photograph the opening, draw the system — storefront, office glass, or a shower enclosure — on your iPad, show the client a realistic render, and hand them a priced proposal to sign — all in one visit.</p>
       <div class="hero-cta">
-        <a href="#pricing" class="btn btn-primary btn-lg">Start 7-day free trial</a>
+        <a href="#pricing" class="btn btn-primary btn-lg">Claim your founding price</a>
         <a href="#how" class="btn btn-ghost btn-lg">See how it works</a>
       </div>
       <p class="microcopy">✓ <b>No setup fees</b> &nbsp;·&nbsp; ✓ <b>No long-term contract</b> &nbsp;·&nbsp; ✓ Cancel anytime</p>
@@ -272,38 +275,58 @@
   <div class="wrap">
     <div class="center">
       <div class="kicker">Pricing</div>
-      <h2>Simple pricing. One plan. $39 a month.</h2>
-      <p class="sub">Everything included — no tiers, no per-seat fees, no setup costs. Start with a 7-day free trial, then pay monthly or save with yearly.</p>
+      <h2>Founding pricing &mdash; pick one service, or bundle both.</h2>
+      <p class="sub">Two estimators, one platform. Take just what you need, or get both and save. Founding members lock in this price for life.</p>
     </div>
-
-    <div class="toggle">
-      <span class="tlabel act" id="lblM">Monthly</span>
-      <div class="switch" id="sw" onclick="toggleBilling()"><i></i></div>
-      <span class="tlabel" id="lblY">Yearly</span>
-      <span class="save">2 months free</span>
-    </div>
-
-    <div style="max-width:420px;margin:0 auto">
-      <div class="plan pop">
-        <div class="poptag">7-day free trial</div>
-        <h3>GlassEstimate</h3>
-        <div class="who">For small glass shops &amp; solo contractors</div>
-        <div class="price"><span class="cur">$</span><span class="amt" data-m="39" data-y="32.50">39</span><span class="per">/mo</span></div>
-        <div class="billed" data-mtxt="Billed monthly · cancel anytime" data-ytxt="$390/yr — save $78 (2 months free)">Billed monthly · cancel anytime</div>
+    <div style="display:flex;flex-wrap:wrap;gap:20px;justify-content:center;align-items:stretch;max-width:960px;margin:0 auto">
+      <div class="plan" style="flex:1 1 270px;max-width:320px">
+        <h3>Showers</h3>
+        <div class="who">Shower enclosure estimates</div>
+        <div class="price"><span class="cur">$</span><span class="amt">49</span><span class="per">/mo</span></div>
+        <div class="billed">Founding price &middot; launching soon</div>
         <ul>
-          <li>Unlimited estimates &amp; clients</li>
-          <li>Photo visual estimator + realistic renders</li>
-          <li>All systems, doors, sidelites &amp; transoms</li>
-          <li>Enclosure layouts (flat / L / C-U)</li>
-          <li>On-photo perspective renders</li>
+          <li>Most popular shower styles</li>
+          <li>Single, inline, corner, neo-angle &amp; sliding</li>
+          <li>Your hardware, glass &amp; labor rates</li>
+          <li>Cutouts, holes &amp; notches priced in</li>
+          <li>Several enclosures per project</li>
+          <li>Branded, customer-ready quote</li>
+        </ul>
+        <a href="/signup?plan=showers" class="btn btn-primary">Claim founding price</a>
+      </div>
+      <div class="plan pop" style="flex:1 1 270px;max-width:320px">
+        <div class="poptag">Best value</div>
+        <h3>Both</h3>
+        <div class="who">Showers + flat glass, together</div>
+        <div class="price"><span class="cur">$</span><span class="amt">79</span><span class="per">/mo</span></div>
+        <div class="billed">Founding price &middot; save $19/mo vs separate</div>
+        <ul>
+          <li>Everything in Showers</li>
+          <li>Everything in Flat Glass</li>
+          <li>One login for your whole shop</li>
           <li>Branded proposals + e-signature</li>
           <li>Invoicing, payments &amp; job tracking</li>
-          <li>Works on your iPad · email support</li>
+          <li>Priority email support</li>
         </ul>
-        <a href="https://buy.stripe.com/8x200cf659F79xs3rE1B602" id="checkoutBtn" class="btn btn-primary">Start 7-day free trial</a>
+        <a href="/signup?plan=both" class="btn btn-primary">Claim founding price</a>
+      </div>
+      <div class="plan" style="flex:1 1 270px;max-width:320px">
+        <h3>Flat Glass</h3>
+        <div class="who">Interior glass &amp; storefronts</div>
+        <div class="price"><span class="cur">$</span><span class="amt">49</span><span class="per">/mo</span></div>
+        <div class="billed">Founding price &middot; available now</div>
+        <ul>
+          <li>Photo visual estimator + renders</li>
+          <li>Storefronts, partitions &amp; enclosures</li>
+          <li>Doors, sidelites &amp; transoms</li>
+          <li>Your rates &amp; instant pricing</li>
+          <li>Branded proposals + e-signature</li>
+          <li>Invoicing, payments &amp; job tracking</li>
+        </ul>
+        <a href="/signup?plan=flat" class="btn btn-primary">Claim founding price</a>
       </div>
     </div>
-    <p class="pricefoot">No setup fees · no contract · free for 7 days — cancel anytime before you're billed.</p>
+    <p class="pricefoot">&#128274; Founding members lock in this price for life. No setup fees &middot; no contract &middot; cancel anytime.</p>
   </div>
 </section>
 
@@ -313,7 +336,7 @@
     <div class="center"><div class="kicker">FAQ</div><h2>Questions, answered</h2></div>
     <div class="faq">
       <div class="qa"><button onclick="tog(this)">How does the 7-day free trial work?<span class="pm">+</span></button><div class="ans">Start using GlassEstimate free for 7 days with full access to your plan's features. You won't be billed until the trial ends, and you can cancel anytime before then at no charge.</div></div>
-      <div class="qa"><button onclick="tog(this)">Is it really just one simple price?<span class="pm">+</span></button><div class="ans">Yes — $39/month gets you everything, with unlimited estimates and clients. No tiers to compare, no per-seat fees, and no setup costs. Pay yearly and get two months free.</div></div>
+      <div class="qa"><button onclick="tog(this)">Is it really just one simple price?<span class="pm">+</span></button><div class="ans">Showers or Flat Glass are $49/mo each, and Both is $79/mo. No per-seat fees, no setup costs. Founding members lock in these prices for life.</div></div>
       <div class="qa"><button onclick="tog(this)">Do I have to sign a long contract?<span class="pm">+</span></button><div class="ans">No. Monthly plans are month-to-month — cancel anytime. Choose yearly only if you want two months free. There are no setup or onboarding fees on any plan.</div></div>
       <div class="qa"><button onclick="tog(this)">Will it work on my iPad in the field?<span class="pm">+</span></button><div class="ans">Absolutely — GlassEstimate is touch-first and designed to be used on a tablet standing in front of the customer. Snap the photo, draw, render, price, and sign right there.</div></div>
       <div class="qa"><button onclick="tog(this)">What's the difference between monthly and yearly?<span class="pm">+</span></button><div class="ans">Same features either way. Yearly billing gives you two months free (pay for 10, get 12). Monthly gives you maximum flexibility to cancel whenever you like.</div></div>
@@ -327,8 +350,8 @@
   <div class="wrap">
     <div class="cta">
       <h2>Stop losing jobs to the follow-up.</h2>
-      <p>Start your 7-day free trial today and close your next glass job on the first visit.</p>
-      <a href="#pricing" class="btn btn-primary btn-lg">Start 7-day free trial</a>
+      <p>Lock in founding pricing today and close your next glass job on the first visit.</p>
+      <a href="#pricing" class="btn btn-primary btn-lg">Claim your founding price</a>
       <p style="color:#dbe6ff;font-size:13.5px;margin-top:16px">Questions first? Email us at <a href="mailto:order@eaglesglassinc.com" style="color:#fff;font-weight:600;text-decoration:underline">order@eaglesglassinc.com</a></p>
     </div>
   </div>
@@ -342,19 +365,6 @@
 </footer>
 
 <script>
-  const MONTHLY_URL='https://buy.stripe.com/8x200cf659F79xs3rE1B602';
-  const YEARLY_URL='https://buy.stripe.com/aFa00ce215oRaBw0fs1B603';
-  let yearly=false;
-  function toggleBilling(){
-    yearly=!yearly;
-    document.getElementById('sw').classList.toggle('on',yearly);
-    document.getElementById('lblM').classList.toggle('act',!yearly);
-    document.getElementById('lblY').classList.toggle('act',yearly);
-    document.querySelectorAll('.price .amt').forEach(el=>{ el.textContent = yearly? el.dataset.y : el.dataset.m; });
-    document.querySelectorAll('.per').forEach(el=>{ el.textContent = yearly? '/mo, billed yearly' : '/mo'; });
-    document.querySelectorAll('.billed').forEach(el=>{ el.textContent = yearly? el.dataset.ytxt : el.dataset.mtxt; });
-    document.getElementById('checkoutBtn').href = yearly? YEARLY_URL : MONTHLY_URL;
-  }
   function tog(b){ const qa=b.parentElement; qa.classList.toggle('open'); b.querySelector('.pm').textContent = qa.classList.contains('open')?'–':'+'; }
 </script>
 </body>

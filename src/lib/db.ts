@@ -6,6 +6,7 @@ export interface CompanyRow {
   id: number;
   name: string;
   slug: string;
+  plan?: 'showers' | 'flat' | 'both';
   logo: string;
   address: string;
   phone: string;
@@ -967,12 +968,13 @@ export const db = {
   tenants: {
     // Atomically create a new company (seeded with the default glass catalog)
     // plus its owner user, in a single persisted write.
-    create(data: { companyName: string; name: string; email: string; password_hash: string }): Promise<{ company: CompanyRow; user: UserRow }> {
+    create(data: { companyName: string; name: string; email: string; password_hash: string; plan?: 'showers' | 'flat' | 'both' }): Promise<{ company: CompanyRow; user: UserRow }> {
       return write((s) => {
         const companyId = s.next_ids.companies++;
         const slugBase = (data.companyName || 'company').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `company-${companyId}`;
         const company: CompanyRow = {
           id: companyId, name: data.companyName || 'My Company', slug: `${slugBase}-${companyId}`,
+          plan: data.plan || 'both',
           logo: '', address: '', phone: '', email: data.email.trim().toLowerCase(), website: '', tax_id: '',
           invoice_prefix: 'INV-', invoice_next_number: 1,
           default_tax_rate: 8.25, default_due_days: 30,

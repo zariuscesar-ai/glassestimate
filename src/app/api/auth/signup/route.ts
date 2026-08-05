@@ -11,6 +11,7 @@ export async function POST(req: Request) {
   const name = (body.name || '').trim();
   const email = (body.email || '').trim().toLowerCase();
   const password = body.password || '';
+  const plan: 'showers' | 'flat' | 'both' = ['showers', 'flat', 'both'].includes(body.plan) ? body.plan : 'both';
 
   if (!companyName || !name || !email || !password) {
     return NextResponse.json({ error: 'Company name, your name, email, and password are all required.' }, { status: 400 });
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   const { company, user } = await db.tenants.create({
-    companyName, name, email, password_hash: hashPassword(password),
+    companyName, name, email, password_hash: hashPassword(password), plan,
   });
 
   const token = await createSessionToken(user.id, company.id);
