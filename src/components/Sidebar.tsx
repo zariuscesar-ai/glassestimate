@@ -54,6 +54,7 @@ export default function Sidebar() {
     { href: '/jobs', label: 'Jobs', icon: '🔧' },
     { href: '/payments', label: 'Payments', icon: '💰' },
     { href: '/visual-estimator', label: 'Visual Estimator', icon: '🎨' },
+    { href: '/showers', label: 'Shower Estimator', icon: '🚿' },
     { href: '/shape-calculator', label: 'Shape Calculator', icon: '📐' },
     { href: '/settings', label: 'Settings', icon: '⚙' },
   ];
@@ -68,18 +69,23 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-2 space-y-0.5">
-        {nav.map((item) => (
+        {nav.map((item) => {
+          const active = isActive(item.href);
+          const green = item.href === '/showers';
+          const cls = green
+            ? (active ? 'bg-emerald-600 text-white font-medium' : 'text-emerald-300 hover:bg-emerald-800/50 hover:text-white')
+            : (active ? 'bg-navy-700 text-white font-medium' : 'text-slate-300 hover:bg-navy-800 hover:text-white');
+          return (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-              isActive(item.href) ? 'bg-navy-700 text-white font-medium' : 'text-slate-300 hover:bg-navy-800 hover:text-white'
-            }`}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${cls}`}
           >
             <span className="text-base w-5 text-center">{item.icon}</span>
             {item.label}
           </Link>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="px-4 py-3 border-t border-navy-700 space-y-2">
