@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES } from "@/lib/shower/types";
-import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish } from "@/lib/shower/types";
+import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
+import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const DEFAULT_WIDTHS: Record<ShowerStyle, number[]> = {
   "single-door": [30],
@@ -25,10 +28,65 @@ function makeEnclosure(id: string, n: number): EnclosureConfig {
 
 const money = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function ShowersPage() {
+function Configurator() {
   const counter = useRef(1);
   const [enclosures, setEnclosures] = useState<EnclosureConfig[]>([makeEnclosure("e1", 1)]);
-  const project = useMemo(() => priceProject(enclosures), [enclosures]);
+  const [rates, setRates] = useState<RateTable>(DEFAULT_SHOWER_RATES);
+  const [projectName, setProjectName] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [markupPct, setMarkupPct] = useState(0);
+  const [taxPct, setTaxPct] = useState(0);
+  const params = useSearchParams();
+  const router = useRouter();
+  const editId = params.get("id");
+  const [savedId, setSavedId] = useState<string | null>(editId);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+  useEffect(() => {
+    fetch("/api/companies").then((r) => (r.ok ? r.json() : [])).then((list) => {
+      const c = Array.isArray(list) ? list[0] : null;
+      if (c && c.shower_rates) setRates(c.shower_rates as RateTable);
+      if (c && typeof c.default_tax_rate === "number") setTaxPct(c.default_tax_rate);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!editId) return;
+    fetch("/api/shower-estimates/" + editId).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
+      setProjectName(d.project_name || "");
+      setClientName(d.client_name || "");
+      setMarkupPct(d.markup_pct || 0);
+      setTaxPct(d.tax_pct || 0);
+      if (Array.isArray(d.enclosures) && d.enclosures.length) setEnclosures(d.enclosures);
+      setSavedId(String(d.id));
+    }).catch(() => {});
+  }, [editId]);
+  const project = useMemo(() => priceProject(enclosures, rates), [enclosures, rates]);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const markupAmt = r2((project.subtotal * (markupPct || 0)) / 100);
+  const afterMarkup = r2(project.subtotal + markupAmt);
+  const taxAmt = r2((afterMarkup * (taxPct || 0)) / 100);
+  const grandTotal = r2(afterMarkup + taxAmt);
+
+  const saveEstimate = async () => {
+    setSaving(true); setSaveMsg("");
+    const payload = {
+      project_name: projectName, client_name: clientName,
+      enclosures, markup_pct: markupPct, tax_pct: taxPct,
+      subtotal: project.subtotal, total: grandTotal, status: "draft",
+    };
+    try {
+      const url = savedId ? "/api/shower-estimates/" + savedId : "/api/shower-estimates";
+      const r = await fetch(url, { method: savedId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      if (!savedId && d && d.id) { setSavedId(String(d.id)); router.replace("/showers?id=" + d.id); }
+      setSaveMsg("Saved");
+      setTimeout(() => setSaveMsg(""), 2500);
+    } catch { setSaveMsg("Save failed"); }
+    finally { setSaving(false); }
+  };
 
   const update = (id: string, patch: Partial<EnclosureConfig>) =>
     setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, ...patch } : e)));
@@ -51,7 +109,24 @@ export default function ShowersPage() {
             <p className="text-sm text-slate-500">Build a frameless shower quote &mdash; add as many enclosures as the job needs.</p>
           </div>
         </div>
-        <button onClick={add} className="rounded-lg bg-emerald-600 text-white font-medium px-4 py-2.5 text-sm hover:bg-emerald-700">+ Add enclosure</button>
+        <div className="flex items-center gap-2">
+          <Link href="/showers/saved" className="text-sm text-slate-500 hover:text-slate-700 px-2 py-2">Saved</Link>
+          <Link href="/showers/rates" className="text-sm text-emerald-700 hover:underline px-2 py-2">Edit rates</Link>
+          <button onClick={add} className="rounded-lg border border-emerald-300 text-emerald-700 font-medium px-3 py-2.5 text-sm hover:bg-emerald-50">+ Add enclosure</button>
+          <button onClick={saveEstimate} disabled={saving} className="rounded-lg bg-emerald-600 text-white font-medium px-4 py-2.5 text-sm hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : savedId ? "Update" : "Save"}</button>
+          {saveMsg && <span className={"text-sm " + (saveMsg === "Saved" ? "text-green-600" : "text-red-500")}>{saveMsg}</span>}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 mb-6 grid sm:grid-cols-2 gap-3">
+        <label className="block">
+          <span className="block text-[11px] text-slate-500 mb-1 uppercase tracking-wide font-semibold">Project name</span>
+          <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="e.g. Master bath remodel" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+        </label>
+        <label className="block">
+          <span className="block text-[11px] text-slate-500 mb-1 uppercase tracking-wide font-semibold">Client</span>
+          <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Customer name" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+        </label>
       </div>
 
       <div className="space-y-6">
@@ -134,12 +209,36 @@ export default function ShowersPage() {
         })}
       </div>
 
-      <div className="mt-6 rounded-xl bg-emerald-600 text-white px-6 py-4 flex items-center justify-between shadow-sm">
-        <div>
-          <div className="text-sm text-emerald-100">Project total &middot; {enclosures.length} enclosure{enclosures.length > 1 ? "s" : ""}</div>
-          <div className="text-xs text-emerald-200">Materials, hardware, fabrication &amp; labor</div>
+      <div className="mt-6 rounded-xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-6 py-4 space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-600">Subtotal &middot; {enclosures.length} enclosure{enclosures.length > 1 ? "s" : ""} (materials + labor)</span>
+            <span className="font-medium text-slate-800">{money(project.subtotal)}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-slate-600">
+              <span>Markup</span>
+              <input type="number" min={0} value={markupPct} onChange={(e) => setMarkupPct(parseFloat(e.target.value) || 0)} className="w-16 rounded border border-slate-300 px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+              <span>%</span>
+            </div>
+            <span className="font-medium text-slate-800">+{money(markupAmt)}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-slate-600">
+              <span>Tax</span>
+              <input type="number" min={0} value={taxPct} onChange={(e) => setTaxPct(parseFloat(e.target.value) || 0)} className="w-16 rounded border border-slate-300 px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+              <span>%</span>
+            </div>
+            <span className="font-medium text-slate-800">+{money(taxAmt)}</span>
+          </div>
         </div>
-        <div className="text-3xl font-bold">{money(project.subtotal)}</div>
+        <div className="bg-emerald-600 text-white px-6 py-4 flex items-center justify-between">
+          <div>
+            <div className="text-sm text-emerald-100">Total &mdash; customer price</div>
+            <div className="text-xs text-emerald-200">{projectName || "Untitled project"}{clientName ? " for " + clientName : ""}</div>
+          </div>
+          <div className="text-3xl font-bold">{money(grandTotal)}</div>
+        </div>
       </div>
     </div>
   );
@@ -165,5 +264,13 @@ function SelectField({ label, value, onChange, options }: { label: string; value
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </label>
+  );
+}
+
+export default function ShowersPage() {
+  return (
+    <Suspense fallback={<div className="py-16 text-center text-slate-400">Loading...</div>}>
+      <Configurator />
+    </Suspense>
   );
 }

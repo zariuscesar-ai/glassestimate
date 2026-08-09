@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { RateTable, EnclosureConfig } from './shower/types';
 
 // ---- Types ----
 export interface CompanyRow {
@@ -7,6 +8,7 @@ export interface CompanyRow {
   name: string;
   slug: string;
   plan?: 'showers' | 'flat' | 'both';
+  shower_rates?: RateTable;
   logo: string;
   address: string;
   phone: string;
@@ -182,6 +184,21 @@ export interface UserRow {
   created_at: string;
 }
 
+export interface ShowerEstimateRow {
+  id: number;
+  company_id: number;
+  project_name: string;
+  client_name: string;
+  enclosures: EnclosureConfig[];
+  markup_pct: number;
+  tax_pct: number;
+  subtotal: number;
+  total: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface StoreData {
   companies: CompanyRow[];
   clients: ClientRow[];
@@ -194,6 +211,7 @@ interface StoreData {
   visual_projects: VisualProjectRow[];
   jobs: JobRow[];
   users: UserRow[];
+  shower_estimates: ShowerEstimateRow[];
   next_ids: Record<string, number>;
 }
 
@@ -274,7 +292,8 @@ function defaultStore(): StoreData {
     visual_projects: [],
     jobs: [],
     users: [],
-    next_ids: { companies: 2, clients: 1, products: 1, bundles: 1, bundle_items: 1, invoices: 1, invoice_items: 1, payments: 1, visual_projects: 1, jobs: 1, users: 1 },
+    shower_estimates: [],
+    next_ids: { companies: 2, clients: 1, products: 1, bundles: 1, bundle_items: 1, invoices: 1, invoice_items: 1, payments: 1, visual_projects: 1, jobs: 1, users: 1, shower_estimates: 1 },
   };
 }
 
@@ -925,6 +944,48 @@ export const db = {
         const idx = s.jobs.findIndex((j) => j.id === id);
         if (idx === -1) return false;
         s.jobs.splice(idx, 1);
+        return true;
+      });
+    },
+  },
+
+  showerEstimates: {
+    all(companyId: number): Promise<ShowerEstimateRow[]> {
+      return read((s) => (s.shower_estimates || []).filter((e) => e.company_id === companyId).sort((a, b) => b.updated_at.localeCompare(a.updated_at)));
+    },
+    getById(id: number, companyId: number): Promise<ShowerEstimateRow | undefined> {
+      return read((s) => (s.shower_estimates || []).find((e) => e.id === id && e.company_id === companyId));
+    },
+    insert(companyId: number, data: Partial<ShowerEstimateRow>): Promise<ShowerEstimateRow> {
+      return write((s) => {
+        if (!s.shower_estimates) s.shower_estimates = [];
+        if (!s.next_ids.shower_estimates) s.next_ids.shower_estimates = 1;
+        const row: ShowerEstimateRow = {
+          id: s.next_ids.shower_estimates++, company_id: companyId,
+          project_name: data.project_name || '', client_name: data.client_name || '',
+          enclosures: data.enclosures || [], markup_pct: data.markup_pct || 0,
+          tax_pct: data.tax_pct || 0, subtotal: data.subtotal || 0, total: data.total || 0,
+          status: data.status || 'draft', created_at: now(), updated_at: now(),
+        };
+        s.shower_estimates.push(row);
+        return row;
+      });
+    },
+    update(id: number, companyId: number, data: Partial<ShowerEstimateRow>): Promise<ShowerEstimateRow | null> {
+      return write((s) => {
+        if (!s.shower_estimates) s.shower_estimates = [];
+        const idx = s.shower_estimates.findIndex((e) => e.id === id && e.company_id === companyId);
+        if (idx === -1) return null;
+        s.shower_estimates[idx] = { ...s.shower_estimates[idx], ...data, id, company_id: companyId, updated_at: now() };
+        return s.shower_estimates[idx];
+      });
+    },
+    delete(id: number, companyId: number): Promise<boolean> {
+      return write((s) => {
+        if (!s.shower_estimates) s.shower_estimates = [];
+        const idx = s.shower_estimates.findIndex((e) => e.id === id && e.company_id === companyId);
+        if (idx === -1) return false;
+        s.shower_estimates.splice(idx, 1);
         return true;
       });
     },
