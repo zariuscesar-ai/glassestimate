@@ -42,17 +42,17 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="stat-card"><p className="stat-label">Revenue This Month</p><p className="stat-value text-green-600">{fmt(stats.revenueThisMonth)}</p></div>
-        <div className="stat-card"><p className="stat-label">Outstanding</p><p className="stat-value text-amber-600">{fmt(stats.outstandingTotal)}</p></div>
-        <div className="stat-card"><p className="stat-label">Overdue Invoices</p><p className="stat-value text-red-600">{stats.overdueCount}</p></div>
-        <div className="stat-card"><p className="stat-label">Pending Estimates</p><p className="stat-value text-blue-600">{stats.estimatesPending}</p></div>
+        <Link href="/payments" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">Revenue This Month</p><p className="stat-value text-green-600">{fmt(stats.revenueThisMonth)}</p></Link>
+        <Link href="/invoices" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">Outstanding</p><p className="stat-value text-amber-600">{fmt(stats.outstandingTotal)}</p></Link>
+        <Link href="/invoices" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">Overdue Invoices</p><p className="stat-value text-red-600">{stats.overdueCount}</p></Link>
+        <Link href="/estimates" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">Pending Estimates</p><p className="stat-value text-blue-600">{stats.estimatesPending}</p></Link>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="stat-card"><p className="stat-label">Total Clients</p><p className="stat-value">{stats.totalClients}</p></div>
-        <div className="stat-card"><p className="stat-label">Total Products</p><p className="stat-value">{stats.totalProducts}</p></div>
-        <div className="stat-card"><p className="stat-label">Total Invoices</p><p className="stat-value">{stats.totalInvoices}</p></div>
-        <div className="stat-card"><p className="stat-label">YTD Revenue</p><p className="stat-value">{fmt(stats.revenueYTD)}</p></div>
+        <Link href="/clients" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">Total Clients</p><p className="stat-value">{stats.totalClients}</p></Link>
+        <Link href="/products" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">Total Products</p><p className="stat-value">{stats.totalProducts}</p></Link>
+        <Link href="/invoices" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">Total Invoices</p><p className="stat-value">{stats.totalInvoices}</p></Link>
+        <Link href="/payments" className="stat-card block transition hover:shadow-md hover:border-navy-300"><p className="stat-label">YTD Revenue</p><p className="stat-value">{fmt(stats.revenueYTD)}</p></Link>
       </div>
 
       <div className="card">
