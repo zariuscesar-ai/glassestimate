@@ -17,6 +17,12 @@ export default function NewInvoicePage() {
   const [saving, setSaving] = useState(false);
 
   const [clientId, setClientId] = useState('');
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [ncName, setNcName] = useState('');
+  const [ncEmail, setNcEmail] = useState('');
+  const [ncPhone, setNcPhone] = useState('');
+  const [savingClient, setSavingClient] = useState(false);
+  const [ncErr, setNcErr] = useState('');
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
   const [taxRate, setTaxRate] = useState(8.25);
@@ -89,6 +95,21 @@ export default function NewInvoicePage() {
     finally { setSaving(false); }
   };
 
+  const addClient = async () => {
+    if (!ncName.trim()) return;
+    setSavingClient(true); setNcErr('');
+    try {
+      const r = await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: ncName.trim(), email: ncEmail.trim(), phone: ncPhone.trim() }) });
+      if (!r.ok) throw new Error();
+      const c = await r.json();
+      setClients((list) => [...list, { id: c.id, name: c.name }]);
+      setClientId(String(c.id));
+      setShowNewClient(false);
+      setNcName(''); setNcEmail(''); setNcPhone('');
+    } catch { setNcErr('Could not add client.'); }
+    finally { setSavingClient(false); }
+  };
+
   if (loading) return <div className="flex justify-center py-20"><p className="text-slate-400 text-lg">Loading...</p></div>;
   if (error) return <div className="flex flex-col items-center py-20"><p className="text-red-500 text-lg mb-4">{error}</p><button onClick={() => window.location.reload()} className="btn-primary">Retry</button></div>;
 
@@ -104,7 +125,7 @@ export default function NewInvoicePage() {
             <div className="card p-5">
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Invoice Details</h2>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="label">Client *</label><select className="select" value={clientId} onChange={(e) => setClientId(e.target.value)} required><option value="">Select client...</option>{clients.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}</select></div>
+                <div><div className="flex items-center justify-between"><label className="label">Client *</label><button type="button" onClick={() => setShowNewClient((v) => !v)} className="text-xs text-blue-600 hover:underline mb-1">{showNewClient ? 'Cancel' : '+ New client'}</button></div><select className="select" value={clientId} onChange={(e) => setClientId(e.target.value)} required><option value="">Select client...</option>{clients.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}</select>{showNewClient ? (<div className="space-y-2 rounded-lg border border-slate-200 p-3 bg-slate-50 mt-2"><input className="input" placeholder="Client name *" value={ncName} onChange={(e) => setNcName(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="input" placeholder="Email" value={ncEmail} onChange={(e) => setNcEmail(e.target.value)} /><input className="input" placeholder="Phone" value={ncPhone} onChange={(e) => setNcPhone(e.target.value)} /></div><div className="flex items-center gap-2"><button type="button" onClick={addClient} disabled={savingClient || !ncName.trim()} className="btn-primary btn-sm">{savingClient ? 'Adding...' : 'Add & select'}</button>{ncErr && <span className="text-xs text-red-500">{ncErr}</span>}</div></div>) : null}</div>
                 <div />
                 <div><label className="label">Issue Date *</label><input className="input" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required /></div>
                 <div><label className="label">Due Date *</label><input className="input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required /></div>
