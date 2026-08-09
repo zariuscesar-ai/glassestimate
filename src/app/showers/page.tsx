@@ -113,6 +113,7 @@ function Configurator() {
           <Link href="/showers/saved" className="text-sm text-slate-500 hover:text-slate-700 px-2 py-2">Saved</Link>
           <Link href="/showers/rates" className="text-sm text-emerald-700 hover:underline px-2 py-2">Edit rates</Link>
           <button onClick={add} className="rounded-lg border border-emerald-300 text-emerald-700 font-medium px-3 py-2.5 text-sm hover:bg-emerald-50">+ Add enclosure</button>
+          {savedId ? <Link href={"/showers/quote/" + savedId} className="text-sm text-emerald-700 hover:underline px-2 py-2">Quote</Link> : null}
           <button onClick={saveEstimate} disabled={saving} className="rounded-lg bg-emerald-600 text-white font-medium px-4 py-2.5 text-sm hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : savedId ? "Update" : "Save"}</button>
           {saveMsg && <span className={"text-sm " + (saveMsg === "Saved" ? "text-green-600" : "text-red-500")}>{saveMsg}</span>}
         </div>

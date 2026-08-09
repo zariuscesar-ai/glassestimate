@@ -48,6 +48,7 @@ export default function SavedEstimatesPage() {
               </Link>
               <div className="flex items-center gap-4 pl-4">
                 <span className="font-bold text-emerald-700">{money(r.total)}</span>
+                <Link href={"/showers/quote/" + r.id} className="text-xs text-emerald-700 hover:underline">Quote</Link>
                 <button onClick={() => del(r.id)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
               </div>
             </div>
