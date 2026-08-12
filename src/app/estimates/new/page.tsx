@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 interface Client { id: number; name: string; }
-interface Product { id: number; name: string; unit_price: number; }
-interface LineItem { product_id: number | null; description: string; quantity: number; unit_price: number; amount: number; }
+interface Product { id: number; name: string; unit_price: number; unit?: string; }
+interface Bundle { id: number; name: string; price_per_linear_ft: number; glass_thickness?: string; category?: string; }
+interface LineItem { product_id: number | null; bundle_id?: number | null; unit?: string; description: string; quantity: number; unit_price: number; amount: number; }
 
 export default function NewEstimatePage() {
   const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [bundles, setBundles] = useState<Bundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -38,12 +40,13 @@ export default function NewEstimatePage() {
     let cancelled = false;
     (async () => {
       try {
-        const [cR, pR] = await Promise.all([fetch('/api/clients'), fetch('/api/products')]);
+        const [cR, pR, bR] = await Promise.all([fetch('/api/clients'), fetch('/api/products'), fetch('/api/bundles')]);
         if (!cR.ok || !pR.ok) throw new Error('API error');
         if (cancelled) return;
-        const cD = await cR.json(); const pD = await pR.json();
+        const cD = await cR.json(); const pD = await pR.json(); const bD = bR.ok ? await bR.json() : [];
         setClients(Array.isArray(cD) ? cD : []);
         setProducts(Array.isArray(pD) ? pD : []);
+        setBundles(Array.isArray(bD) ? bD : []);
       } catch (err) { console.error(err); if (!cancelled) setError('Failed to load form data.'); }
       finally { if (!cancelled) setLoading(false); }
     })();
@@ -53,13 +56,29 @@ export default function NewEstimatePage() {
   const updateItem = (i: number, f: keyof LineItem, v: string | number | null) => {
     setItems((prev) => {
       const n = [...prev]; const it = { ...n[i] };
-      if (f === 'product_id' && typeof v === 'number') { it.product_id = v; const p = products.find((x) => x.id === v); if (p) { it.description = p.name; it.unit_price = p.unit_price; } }
-      else if (f === 'quantity' || f === 'unit_price') it[f] = typeof v === 'number' ? v : parseFloat(String(v)) || 0;
+      if (f === 'quantity' || f === 'unit_price') it[f] = typeof v === 'number' ? v : parseFloat(String(v)) || 0;
       else if (f === 'description') it.description = String(v);
       it.amount = Math.round(it.quantity * it.unit_price * 100) / 100; n[i] = it; return n;
     });
   };
-  const addItem = () => setItems((p) => [...p, { product_id: null, description: '', quantity: 1, unit_price: 0, amount: 0 }]);
+  // Pick a catalog entry: a "system" (bundle, priced by the linear foot) or a
+  // raw material/product. Fills the line's name + price so you quote from the
+  // list; qty is then the measurement (linear feet for systems).
+  const pickCatalog = (i: number, value: string) => {
+    setItems((prev) => {
+      const n = [...prev]; const it = { ...n[i] };
+      if (!value) { it.product_id = null; it.bundle_id = null; it.unit = ''; }
+      else if (value.startsWith('b:')) {
+        const b = bundles.find((x) => x.id === parseInt(value.slice(2)));
+        if (b) { it.bundle_id = b.id; it.product_id = null; it.description = b.name; it.unit_price = b.price_per_linear_ft; it.unit = 'linear ft'; }
+      } else if (value.startsWith('p:')) {
+        const p = products.find((x) => x.id === parseInt(value.slice(2)));
+        if (p) { it.product_id = p.id; it.bundle_id = null; it.description = p.name; it.unit_price = p.unit_price; it.unit = p.unit || ''; }
+      }
+      it.amount = Math.round(it.quantity * it.unit_price * 100) / 100; n[i] = it; return n;
+    });
+  };
+  const addItem = () => setItems((p) => [...p, { product_id: null, bundle_id: null, unit: '', description: '', quantity: 1, unit_price: 0, amount: 0 }]);
   const removeItem = (i: number) => { if (items.length <= 1) return; setItems((p) => p.filter((_, idx) => idx !== i)); };
 
   const sub = items.reduce((s, it) => s + it.amount, 0);
@@ -118,8 +137,8 @@ export default function NewEstimatePage() {
             </div>
             <div className="card p-5">
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Line Items</h2>
-              <table className="w-full"><thead><tr className="border-b border-slate-200"><th className="text-left text-xs font-medium text-slate-500 pb-2 w-8">#</th><th className="text-left text-xs font-medium text-slate-500 pb-2">Product</th><th className="text-left text-xs font-medium text-slate-500 pb-2">Description</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-20">Qty</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Price</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Amount</th><th className="w-10" /></tr></thead>
-                <tbody>{items.map((item, i) => (<tr key={i} className="border-b border-slate-100"><td className="py-2 text-sm text-slate-400">{i + 1}</td><td className="py-2 pr-2"><select className="select text-sm py-1.5" value={item.product_id ?? ''} onChange={(e) => { const val = e.target.value ? parseInt(e.target.value) : null; updateItem(i, 'product_id', val); }}><option value="">—</option>{products.map((p) => (<option key={p.id} value={p.id}>{p.name} ({fmt(p.unit_price)})</option>))}</select></td><td className="py-2 pr-2"><input className="input text-sm py-1.5" value={item.description} onChange={(e) => updateItem(i, 'description', e.target.value)} required /></td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.quantity} onChange={(e) => updateItem(i, 'quantity', e.target.value)} /></td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.unit_price} onChange={(e) => updateItem(i, 'unit_price', e.target.value)} /></td><td className="py-2 text-right text-sm font-medium">{fmt(item.amount)}</td><td className="py-2 text-center">{items.length > 1 && (<button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>)}</td></tr>))}</tbody></table>
+              <table className="w-full"><thead><tr className="border-b border-slate-200"><th className="text-left text-xs font-medium text-slate-500 pb-2 w-8">#</th><th className="text-left text-xs font-medium text-slate-500 pb-2 w-56">System / Item</th><th className="text-left text-xs font-medium text-slate-500 pb-2">Description</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-20">Qty</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Price</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Amount</th><th className="w-10" /></tr></thead>
+                <tbody>{items.map((item, i) => (<tr key={i} className="border-b border-slate-100"><td className="py-2 text-sm text-slate-400">{i + 1}</td><td className="py-2 pr-2"><select className="select text-sm py-1.5" value={item.bundle_id ? `b:${item.bundle_id}` : item.product_id != null ? `p:${item.product_id}` : ''} onChange={(e) => pickCatalog(i, e.target.value)}><option value="">+ Add from catalog…</option>{bundles.length > 0 && (<optgroup label="Systems">{bundles.map((b) => (<option key={`b${b.id}`} value={`b:${b.id}`}>{b.name} — {fmt(b.price_per_linear_ft)}/ln ft</option>))}</optgroup>)}<optgroup label="Materials & Hardware">{products.map((p) => (<option key={`p${p.id}`} value={`p:${p.id}`}>{p.name} ({fmt(p.unit_price)}{p.unit ? `/${p.unit}` : ''})</option>))}</optgroup></select></td><td className="py-2 pr-2"><input className="input text-sm py-1.5" value={item.description} onChange={(e) => updateItem(i, 'description', e.target.value)} required /></td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.quantity} onChange={(e) => updateItem(i, 'quantity', e.target.value)} />{item.unit ? <div className="text-[10px] text-slate-400 text-right leading-tight mt-0.5">{item.unit}</div> : null}</td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.unit_price} onChange={(e) => updateItem(i, 'unit_price', e.target.value)} /></td><td className="py-2 text-right text-sm font-medium">{fmt(item.amount)}</td><td className="py-2 text-center">{items.length > 1 && (<button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>)}</td></tr>))}</tbody></table>
               <button type="button" onClick={addItem} className="btn-ghost btn-sm mt-3 text-navy-600">+ Add Line Item</button>
             </div>
             <div className="card p-5"><div className="grid grid-cols-2 gap-4"><div><label className="label">Notes</label><textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} /></div><div><label className="label">Terms & Conditions</label><textarea className="input" rows={3} value={terms} onChange={(e) => setTerms(e.target.value)} /></div></div></div>

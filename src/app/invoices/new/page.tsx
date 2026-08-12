@@ -4,14 +4,16 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Client { id: number; name: string; }
-interface Product { id: number; name: string; unit_price: number; }
+interface Product { id: number; name: string; unit_price: number; unit?: string; }
+interface Bundle { id: number; name: string; price_per_linear_ft: number; glass_thickness?: string; category?: string; }
 
-interface LineItem { product_id: number | null; description: string; quantity: number; unit_price: number; amount: number; }
+interface LineItem { product_id: number | null; bundle_id?: number | null; unit?: string; description: string; quantity: number; unit_price: number; amount: number; }
 
 export default function NewInvoicePage() {
   const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [bundles, setBundles] = useState<Bundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -37,12 +39,13 @@ export default function NewInvoicePage() {
     let cancelled = false;
     async function load() {
       try {
-        const [cRes, pRes] = await Promise.all([fetch('/api/clients'), fetch('/api/products')]);
+        const [cRes, pRes, bRes] = await Promise.all([fetch('/api/clients'), fetch('/api/products'), fetch('/api/bundles')]);
         if (!cRes.ok || !pRes.ok) throw new Error('API error');
-        const cData = await cRes.json(); const pData = await pRes.json();
+        const cData = await cRes.json(); const pData = await pRes.json(); const bData = bRes.ok ? await bRes.json() : [];
         if (cancelled) return;
         setClients(Array.isArray(cData) ? cData : []);
         setProducts(Array.isArray(pData) ? pData : []);
+        setBundles(Array.isArray(bData) ? bData : []);
         const d = new Date(); d.setDate(d.getDate() + 30);
         setDueDate(d.toISOString().split('T')[0]);
       } catch (err) { console.error(err); if (!cancelled) setError('Failed to load data.'); }
@@ -54,17 +57,33 @@ export default function NewInvoicePage() {
   const updateItem = (i: number, field: keyof LineItem, value: string | number | null) => {
     setItems((prev) => {
       const next = [...prev]; const item = { ...next[i] };
-      if (field === 'product_id' && typeof value === 'number') {
-        item.product_id = value; const p = products.find((x) => x.id === value);
-        if (p) { item.description = p.name; item.unit_price = p.unit_price; }
-      } else if (field === 'quantity' || field === 'unit_price') item[field] = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
+      if (field === 'quantity' || field === 'unit_price') item[field] = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
       else if (field === 'description') item.description = String(value);
       item.amount = Math.round(item.quantity * item.unit_price * 100) / 100;
       next[i] = item; return next;
     });
   };
 
-  const addItem = () => setItems((prev) => [...prev, { product_id: null, description: '', quantity: 1, unit_price: 0, amount: 0 }]);
+  // Pick a catalog entry: a "system" (bundle, priced by the linear foot) or a
+  // raw material/product. Fills the line's name + price so you quote from the
+  // list; qty is then the measurement (linear feet for systems).
+  const pickCatalog = (i: number, value: string) => {
+    setItems((prev) => {
+      const next = [...prev]; const item = { ...next[i] };
+      if (!value) { item.product_id = null; item.bundle_id = null; item.unit = ''; }
+      else if (value.startsWith('b:')) {
+        const b = bundles.find((x) => x.id === parseInt(value.slice(2)));
+        if (b) { item.bundle_id = b.id; item.product_id = null; item.description = b.name; item.unit_price = b.price_per_linear_ft; item.unit = 'linear ft'; }
+      } else if (value.startsWith('p:')) {
+        const p = products.find((x) => x.id === parseInt(value.slice(2)));
+        if (p) { item.product_id = p.id; item.bundle_id = null; item.description = p.name; item.unit_price = p.unit_price; item.unit = p.unit || ''; }
+      }
+      item.amount = Math.round(item.quantity * item.unit_price * 100) / 100;
+      next[i] = item; return next;
+    });
+  };
+
+  const addItem = () => setItems((prev) => [...prev, { product_id: null, bundle_id: null, unit: '', description: '', quantity: 1, unit_price: 0, amount: 0 }]);
   const removeItem = (i: number) => { if (items.length <= 1) return; setItems((prev) => prev.filter((_, idx) => idx !== i)); };
 
   const subtotal = items.reduce((s, it) => s + it.amount, 0);
@@ -133,8 +152,8 @@ export default function NewInvoicePage() {
             </div>
             <div className="card p-5">
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Line Items</h2>
-              <table className="w-full"><thead><tr className="border-b border-slate-200"><th className="text-left text-xs font-medium text-slate-500 pb-2 w-8">#</th><th className="text-left text-xs font-medium text-slate-500 pb-2">Product</th><th className="text-left text-xs font-medium text-slate-500 pb-2">Description</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-20">Qty</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Price</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Amount</th><th className="w-10" /></tr></thead>
-                <tbody>{items.map((item, i) => (<tr key={i} className="border-b border-slate-100"><td className="py-2 text-sm text-slate-400">{i + 1}</td><td className="py-2 pr-2"><select className="select text-sm py-1.5" value={item.product_id ?? ''} onChange={(e) => { const v = e.target.value ? parseInt(e.target.value) : null; updateItem(i, 'product_id', v); }}><option value="">—</option>{products.map((p) => (<option key={p.id} value={p.id}>{p.name} ({fmt(p.unit_price)})</option>))}</select></td><td className="py-2 pr-2"><input className="input text-sm py-1.5" value={item.description} onChange={(e) => updateItem(i, 'description', e.target.value)} required /></td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.quantity} onChange={(e) => updateItem(i, 'quantity', e.target.value)} /></td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.unit_price} onChange={(e) => updateItem(i, 'unit_price', e.target.value)} /></td><td className="py-2 text-right text-sm font-medium">{fmt(item.amount)}</td><td className="py-2 text-center">{items.length > 1 && (<button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>)}</td></tr>))}</tbody></table>
+              <table className="w-full"><thead><tr className="border-b border-slate-200"><th className="text-left text-xs font-medium text-slate-500 pb-2 w-8">#</th><th className="text-left text-xs font-medium text-slate-500 pb-2 w-56">System / Item</th><th className="text-left text-xs font-medium text-slate-500 pb-2">Description</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-20">Qty</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Price</th><th className="text-right text-xs font-medium text-slate-500 pb-2 w-28">Amount</th><th className="w-10" /></tr></thead>
+                <tbody>{items.map((item, i) => (<tr key={i} className="border-b border-slate-100"><td className="py-2 text-sm text-slate-400">{i + 1}</td><td className="py-2 pr-2"><select className="select text-sm py-1.5" value={item.bundle_id ? `b:${item.bundle_id}` : item.product_id != null ? `p:${item.product_id}` : ''} onChange={(e) => pickCatalog(i, e.target.value)}><option value="">+ Add from catalog…</option>{bundles.length > 0 && (<optgroup label="Systems">{bundles.map((b) => (<option key={`b${b.id}`} value={`b:${b.id}`}>{b.name} — {fmt(b.price_per_linear_ft)}/ln ft</option>))}</optgroup>)}<optgroup label="Materials & Hardware">{products.map((p) => (<option key={`p${p.id}`} value={`p:${p.id}`}>{p.name} ({fmt(p.unit_price)}{p.unit ? `/${p.unit}` : ''})</option>))}</optgroup></select></td><td className="py-2 pr-2"><input className="input text-sm py-1.5" value={item.description} onChange={(e) => updateItem(i, 'description', e.target.value)} required /></td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.quantity} onChange={(e) => updateItem(i, 'quantity', e.target.value)} />{item.unit ? <div className="text-[10px] text-slate-400 text-right leading-tight mt-0.5">{item.unit}</div> : null}</td><td className="py-2 pr-2"><input className="input text-sm py-1.5 text-right" type="number" step="0.01" min="0" value={item.unit_price} onChange={(e) => updateItem(i, 'unit_price', e.target.value)} /></td><td className="py-2 text-right text-sm font-medium">{fmt(item.amount)}</td><td className="py-2 text-center">{items.length > 1 && (<button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>)}</td></tr>))}</tbody></table>
               <button type="button" onClick={addItem} className="btn-ghost btn-sm mt-3 text-navy-600">+ Add Line Item</button>
             </div>
             <div className="card p-5"><div className="grid grid-cols-2 gap-4"><div><label className="label">Notes</label><textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} /></div><div><label className="label">Terms</label><textarea className="input" rows={3} value={terms} onChange={(e) => setTerms(e.target.value)} /></div></div></div>
