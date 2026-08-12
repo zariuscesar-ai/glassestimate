@@ -146,15 +146,46 @@ function planTransform(pts: Pt[], cw: number, ch: number) {
   const ox = (cw - wft * scale) / 2 - minx * scale; const oy = (ch - hft * scale) / 2 + maxy * scale;
   return { scale, toPx: (p: Pt) => ({ x: ox + p.x * scale, y: oy - p.y * scale }), toFt: (x: number, y: number) => ({ x: (x - ox) / scale, y: (oy - y) / scale }) };
 }
-function drawPlan(ctx: CanvasRenderingContext2D, cw: number, ch: number, pts: Pt[], runs: Run[], sel: number, title: string) {
+
+// A stable, non-fitting transform used WHILE hand-drawing so the picture never
+// rescales/recenters as points are added — taps land exactly where clicked and
+// placed corners stay put. Auto-fit (planTransform) is used only for presets and
+// finished shapes. Both the click handler and the renderer use getPlanT() so
+// screen<->feet mapping is identical in both.
+type PlanT = { scale: number; toPx: (p: Pt) => Pt; toFt: (x: number, y: number) => Pt };
+const DRAW_SCALE = 22; // px per foot while drawing
+function fixedTransform(cw: number, ch: number): PlanT {
+  const ox = cw / 2, oy = ch * 0.6, scale = DRAW_SCALE;
+  return { scale, toPx: (p: Pt) => ({ x: ox + p.x * scale, y: oy - p.y * scale }), toFt: (x: number, y: number) => ({ x: (x - ox) / scale, y: (oy - y) / scale }) };
+}
+function getPlanT(pts: Pt[], cw: number, ch: number, draw: boolean): PlanT {
+  return draw ? fixedTransform(cw, ch) : planTransform(pts, cw, ch);
+}
+
+function drawPlan(ctx: CanvasRenderingContext2D, cw: number, ch: number, pts: Pt[], runs: Run[], sel: number, title: string, t: PlanT, draw: boolean) {
   ctx.fillStyle = '#0e1828'; ctx.fillRect(0, 0, cw, ch);
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
-  for (let i = 0; i < cw; i += 28) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, ch); ctx.stroke(); }
-  for (let i = 0; i < ch; i += 28) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(cw, i); ctx.stroke(); }
-  ctx.fillStyle = '#cdd9ee'; ctx.font = '600 15px -apple-system,sans-serif'; ctx.fillText(title || 'Floor Plan', 18, 28);
-  ctx.fillStyle = '#7f90ad'; ctx.font = '11px -apple-system,sans-serif'; ctx.fillText('Top-down view', 18, 46);
-  if (pts.length < 2) { ctx.fillStyle = '#64748b'; ctx.font = '13px -apple-system,sans-serif'; ctx.fillText('Tap points to draw the enclosure…', cw / 2 - 100, ch / 2); if (pts.length === 1) { const t = planTransform([pts[0], { x: pts[0].x + 1, y: pts[0].y }], cw, ch); const q = t.toPx(pts[0]); ctx.fillStyle = '#2563eb'; ctx.beginPath(); ctx.arc(q.x, q.y, 6, 0, 7); ctx.fill(); } return; }
-  const t = planTransform(pts, cw, ch);
+  if (draw) {
+    // Graph-paper grid locked to the drawing scale: 1 square = 1 ft, brighter every 5 ft.
+    const o = t.toPx({ x: 0, y: 0 }); const s = t.scale;
+    for (let gx = ((o.x % s) + s) % s, n = Math.round((gx - o.x) / s); gx < cw; gx += s, n++) { ctx.strokeStyle = n % 5 === 0 ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, ch); ctx.stroke(); }
+    for (let gy = ((o.y % s) + s) % s, n = Math.round((o.y - gy) / s); gy < ch; gy += s, n++) { ctx.strokeStyle = n % 5 === 0 ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cw, gy); ctx.stroke(); }
+  } else {
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
+    for (let i = 0; i < cw; i += 28) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, ch); ctx.stroke(); }
+    for (let i = 0; i < ch; i += 28) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(cw, i); ctx.stroke(); }
+  }
+  ctx.fillStyle = '#cdd9ee'; ctx.font = '600 15px -apple-system,sans-serif'; ctx.textAlign = 'start'; ctx.fillText(title || 'Floor Plan', 18, 28);
+  ctx.fillStyle = '#7f90ad'; ctx.font = '11px -apple-system,sans-serif'; ctx.fillText(draw ? 'Draw mode — 1 square = 1 ft' : 'Top-down view', 18, 46);
+  if (pts.length < 2) {
+    if (draw) {
+      ctx.fillStyle = '#93a4c2'; ctx.font = '13px -apple-system,sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(pts.length === 0 ? 'Tap the first corner to start…' : 'Tap the next corner…', cw / 2, ch - 26); ctx.textAlign = 'start';
+      if (pts.length === 1) { const q = t.toPx(pts[0]); ctx.fillStyle = '#2563eb'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q.x, q.y, 6, 0, 7); ctx.fill(); ctx.stroke(); }
+      return;
+    }
+    ctx.fillStyle = '#64748b'; ctx.font = '13px -apple-system,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Pick a layout or “Draw it” to begin…', cw / 2, ch / 2); ctx.textAlign = 'start';
+    return;
+  }
   // enclosure interior (centroid of corners, in px) — swings & labels orient off this
   const cxs = pts.map(p => t.toPx(p)); const cen = { x: cxs.reduce((s, p) => s + p.x, 0) / cxs.length, y: cxs.reduce((s, p) => s + p.y, 0) / cxs.length };
   const drawArc = (h: Pt, r: number, s: number, e: number) => { const d = Math.atan2(Math.sin(e - s), Math.cos(e - s)); ctx.beginPath(); for (let k = 0; k <= 14; k++) { const ang = s + d * k / 14; const px = h.x + Math.cos(ang) * r, py = h.y + Math.sin(ang) * r; k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke(); };
@@ -265,7 +296,7 @@ export default function VisualEstimatorPage() {
       }
       return;
     }
-    if (view === 'plan') { drawPlan(ctx, cv.width, cv.height, pts, runs, sel, projectName); return; }
+    if (view === 'plan') { drawPlan(ctx, cv.width, cv.height, pts, runs, sel, projectName, getPlanT(pts, cv.width, cv.height, drawMode), drawMode); return; }
     const g = ctx.createLinearGradient(0, 0, 0, cv.height);
     g.addColorStop(0, '#1a2740'); g.addColorStop(0.7, '#131f34'); g.addColorStop(0.7, '#0e1828'); g.addColorStop(1, '#0a1220');
     ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -276,18 +307,25 @@ export default function VisualEstimatorPage() {
     ctx.save(); ctx.filter = 'blur(8px)'; ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(ox + 8, oy + H - 4, W, 14); ctx.restore();
     drawAssembly(ctx, ox, oy, W, H, false, run, wFt, heightFt);
     ctx.fillStyle = '#7f90ad'; ctx.font = '12px -apple-system,sans-serif'; ctx.fillText(`Wall ${sel + 1} of ${runs.length} — ${SYSTEMS[run.system].name}`, 18, 26);
-  }, [pts, runs, sel, view, photo, corners, placing, tmp, heightFt, projectName]);
+  }, [pts, runs, sel, view, photo, corners, placing, tmp, heightFt, projectName, drawMode]);
+
+  // Keep one wall (run) per drawn segment: N corners => N-1 walls. Runs carry
+  // per-wall config, so we only add/trim to match the segment count.
+  useEffect(() => {
+    const need = Math.max(0, pts.length - 1);
+    setRuns(rs => rs.length === need ? rs : rs.length < need ? [...rs, ...Array(need - rs.length).fill(0).map(() => newRun())] : rs.slice(0, need));
+  }, [pts.length]);
 
   const onPhoto = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { const img = new Image(); img.onload = () => { setPhoto(img); setCorners(null); setView('photo'); setPlacing(true); setTmp([]); }; img.src = r.result as string; }; r.readAsDataURL(f); };
   const onCanvasDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const cv = cvRef.current!; const r = cv.getBoundingClientRect(); const x = (e.clientX - r.left) * (cv.width / r.width), y = (e.clientY - r.top) * (cv.height / r.height);
     if (view === 'photo' && placing) { const next = [...tmp, { x, y }]; setTmp(next); if (next.length === 4) { setCorners(next); setPlacing(false); } return; }
     if (view === 'plan' && drawMode) {
-      const base = pts.length >= 2 ? pts : (pts.length === 1 ? [pts[0], { x: pts[0].x + 10, y: pts[0].y }] : [{ x: 0, y: 0 }, { x: 10, y: 0 }]);
-      const t = planTransform(base, cv.width, cv.height); const f = t.toFt(x, y); const snapped = { x: Math.round(f.x * 2) / 2, y: Math.round(f.y * 2) / 2 };
-      setPts(ps => [...ps, snapped]);
-      // after adding this point, wall count should be (new points - 1) = current pts.length
-      setRuns(rs => { const needed = pts.length; return rs.length >= needed ? rs : [...rs, ...Array(needed - rs.length).fill(0).map(() => newRun())]; });
+      // Same stable transform the canvas renders with, so the corner lands
+      // exactly under the cursor and earlier corners don't move. Snap to 0.5 ft.
+      const t = fixedTransform(cv.width, cv.height); const f = t.toFt(x, y);
+      const snapped = { x: Math.round(f.x * 2) / 2, y: Math.round(f.y * 2) / 2 };
+      setPts(ps => [...ps, snapped]); // walls auto-sync to segment count via effect
     }
   };
   const startDraw = () => { setDrawMode(true); setView('plan'); setPts([]); setRuns([]); setSel(0); };
