@@ -2,7 +2,7 @@
 // order-ready glass panel sizes and to-scale quads for the elevation drawing.
 // Pure functions, no deps — unit-testable.
 
-import type { EnclosureConfig, Opening, OpeningKind, Deductions, ShowerStyle } from './types';
+import type { EnclosureConfig, Opening, OpeningKind, Deductions, ShowerStyle, GlassThickness } from './types';
 import { DEFAULT_DEDUCTIONS } from './types';
 
 export type Pt = { x: number; y: number };
@@ -108,6 +108,16 @@ export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; t
     x += advance;
   }
   return { panels, totalW: x, maxH };
+}
+
+// Suggest glass thickness: 1/2" once any panel is tall (> 80") or a span is very
+// wide (> 60"); otherwise 3/8" (the residential standard). See SHOWER-V2-PLAN.
+export function suggestThickness(cfg: EnclosureConfig): GlassThickness {
+  const { openings } = resolveMeasure(cfg);
+  const heights = [cfg.heightIn || 0, cfg.openingHeightIn || 0, ...openings.flatMap((o) => [o.heightLeft, o.heightRight])];
+  const spans = [...(cfg.widthsIn || []), cfg.openingWidthIn || 0, ...openings.flatMap((o) => [o.widthTop, o.widthBottom])];
+  const maxH = Math.max(0, ...heights), maxSpan = Math.max(0, ...spans);
+  return maxH > 80 || maxSpan > 60 ? '1/2"' : '3/8"';
 }
 
 // ---- Top-down plan (footprint) ----
