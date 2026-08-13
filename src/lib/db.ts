@@ -195,6 +195,9 @@ export interface ShowerEstimateRow {
   subtotal: number;
   total: number;
   status: string;
+  // Set when the estimate came in through a public customer self-serve link.
+  customer?: { name: string; email: string; phone: string };
+  source?: string; // e.g. 'public'
   created_at: string;
   updated_at: string;
 }
@@ -965,7 +968,9 @@ export const db = {
           project_name: data.project_name || '', client_name: data.client_name || '',
           enclosures: data.enclosures || [], markup_pct: data.markup_pct || 0,
           tax_pct: data.tax_pct || 0, subtotal: data.subtotal || 0, total: data.total || 0,
-          status: data.status || 'draft', created_at: now(), updated_at: now(),
+          status: data.status || 'draft',
+          customer: data.customer, source: data.source,
+          created_at: now(), updated_at: now(),
         };
         s.shower_estimates.push(row);
         return row;

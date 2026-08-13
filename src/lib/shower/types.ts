@@ -57,6 +57,48 @@ export interface EnclosureConfig {
   finish: Finish;
   extraHandles: number;
   cutouts: CutoutCounts;
+  measure?: EnclosureMeasure;
+}
+
+// ---- Shop drawing / accurate glass sizing (additive, optional) ----
+export type OpeningKind = 'door' | 'panel' | 'return' | 'sliding';
+
+// One measured opening in the enclosure. widthTop/widthBottom differ when a wall
+// is out of plumb; heightLeft/heightRight differ when the floor/curb is out of
+// level. For a square opening all four collapse to width x height.
+export interface Opening {
+  kind: OpeningKind;
+  label: string;
+  widthTop: number;    // inches
+  widthBottom: number; // inches
+  heightLeft: number;  // inches
+  heightRight: number; // inches
+}
+
+// Standard frameless gaps subtracted from the opening to get the ordered glass
+// size. Editable per shop/hardware. Inches.
+export interface Deductions {
+  doorHingeGap: number;   // hinge side
+  doorStrikeGap: number;  // strike/latch side (to panel or wall)
+  doorTopGap: number;
+  doorBottomGap: number;  // floor sweep clearance
+  panelSideGap: number;   // wall side caulk joint (each side)
+  panelTopGap: number;
+  panelBottomGap: number;
+  slidingOverlap: number; // bypass panel overlap at center
+}
+
+export const DEFAULT_DEDUCTIONS: Deductions = {
+  doorHingeGap: 0.1875, doorStrikeGap: 0.1875, doorTopGap: 0.1875, doorBottomGap: 0.375,
+  panelSideGap: 0.125, panelTopGap: 0.125, panelBottomGap: 0.375, slidingOverlap: 1,
+};
+
+// Optional detailed measurements for the shop drawing. When absent, openings are
+// derived square from widthsIn/heightIn so old estimates still work.
+export interface EnclosureMeasure {
+  outOfSquare: boolean;
+  openings: Opening[];
+  deductions: Deductions;
 }
 
 export interface RateTable {

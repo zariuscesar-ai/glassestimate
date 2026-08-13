@@ -41,6 +41,21 @@ export async function sendEmail({ to, subject, html, text }: SendArgs): Promise<
   }
 }
 
+export function showerRequestEmail(
+  companyName: string,
+  customer: { name: string; email: string; phone: string },
+  projectName: string,
+  bodyLines: string[],
+  link: string,
+): { subject: string; html: string; text: string } {
+  const subject = `New shower request — ${customer.name || 'Customer'}${projectName ? ` (${projectName})` : ''}`;
+  const contact = [customer.email, customer.phone].filter(Boolean).join(' · ');
+  const text = `New shower request for ${companyName}.\n\nFrom: ${customer.name || 'Customer'}\n${contact}\nProject: ${projectName || '—'}\n\n${bodyLines.join('\n')}\n\nOpen it in GlassEstimate: ${link}`;
+  const rows = bodyLines.map((l) => `<div style="color:#334155;font-size:14px;padding:2px 0">${l.replace(/</g, '&lt;')}</div>`).join('');
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f172a"><h2 style="margin:0 0 6px">New shower request</h2><p style="margin:0 0 16px;color:#64748b">for ${companyName}</p><div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-weight:600">${customer.name || 'Customer'}</div><div style="color:#475569;font-size:13px">${contact || ''}</div>${projectName ? `<div style="color:#475569;font-size:13px">Project: ${projectName}</div>` : ''}</div><div style="margin-bottom:16px">${rows}</div><p style="margin:0 0 20px"><a href="${link}" style="display:inline-block;background:#059669;color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:8px">Open in GlassEstimate</a></p></div>`;
+  return { subject, html, text };
+}
+
 export function resetEmail(name: string, link: string): { subject: string; html: string; text: string } {
   const who = name ? `Hi ${name},` : 'Hi,';
   const subject = 'Reset your GlassEstimate password';

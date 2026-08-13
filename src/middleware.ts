@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
 // Public paths that never require a session.
-const PUBLIC_PREFIXES = ['/login', '/signup', '/forgot-password', '/reset-password', '/api/auth'];
+const PUBLIC_PREFIXES = ['/login', '/signup', '/forgot-password', '/reset-password', '/api/auth', '/showers/request', '/api/public'];
 const PUBLIC_EXACT = new Set(['/api/health', '/landing.html']);
 const STATIC_FILE = /\.(?:png|jpg|jpeg|gif|svg|ico|webp|css|js|map|txt|woff2?|ttf|eot|pdf)$/i;
 

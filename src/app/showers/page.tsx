@@ -1,10 +1,13 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES } from "@/lib/shower/types";
-import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable } from "@/lib/shower/types";
+import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS } from "@/lib/shower/types";
+import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
+import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings } from "@/lib/shower/glass";
+import ShowerDrawing from "@/components/ShowerDrawing";
+import ShowerPlan from "@/components/ShowerPlan";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -36,6 +39,11 @@ function Configurator() {
   const [clientName, setClientName] = useState("");
   const [markupPct, setMarkupPct] = useState(0);
   const [taxPct, setTaxPct] = useState(0);
+  const [deductions, setDeductions] = useState<Deductions>(DEFAULT_DEDUCTIONS);
+  const [showGaps, setShowGaps] = useState(false);
+  const [planView, setPlanView] = useState(false);
+  const [companySlug, setCompanySlug] = useState("");
+  const [linkCopied, setLinkCopied] = useState(false);
   const params = useSearchParams();
   const router = useRouter();
   const editId = params.get("id");
@@ -47,6 +55,7 @@ function Configurator() {
       const c = Array.isArray(list) ? list[0] : null;
       if (c && c.shower_rates) setRates(c.shower_rates as RateTable);
       if (c && typeof c.default_tax_rate === "number") setTaxPct(c.default_tax_rate);
+      if (c && c.slug) setCompanySlug(c.slug);
     }).catch(() => {});
   }, []);
 
@@ -58,7 +67,11 @@ function Configurator() {
       setClientName(d.client_name || "");
       setMarkupPct(d.markup_pct || 0);
       setTaxPct(d.tax_pct || 0);
-      if (Array.isArray(d.enclosures) && d.enclosures.length) setEnclosures(d.enclosures);
+      if (Array.isArray(d.enclosures) && d.enclosures.length) {
+        setEnclosures(d.enclosures);
+        const ded = d.enclosures.find((e: EnclosureConfig) => e.measure?.deductions)?.measure?.deductions;
+        if (ded) setDeductions({ ...DEFAULT_DEDUCTIONS, ...ded });
+      }
       setSavedId(String(d.id));
     }).catch(() => {});
   }, [editId]);
@@ -73,7 +86,10 @@ function Configurator() {
     setSaving(true); setSaveMsg("");
     const payload = {
       project_name: projectName, client_name: clientName,
-      enclosures, markup_pct: markupPct, tax_pct: taxPct,
+      // Fold current gaps + any out-of-square measurements onto each enclosure so
+      // the shop drawing/glass sizes reproduce exactly when reopened.
+      enclosures: enclosures.map((e) => ({ ...e, measure: { outOfSquare: !!e.measure?.outOfSquare, openings: e.measure?.openings || [], deductions } })),
+      markup_pct: markupPct, tax_pct: taxPct,
       subtotal: project.subtotal, total: grandTotal, status: "draft",
     };
     try {
@@ -98,6 +114,23 @@ function Configurator() {
     setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, cutouts: { ...e.cutouts, [key]: Math.max(0, v) } } : e)));
   const add = () => { counter.current += 1; const n = counter.current; setEnclosures((l) => [...l, makeEnclosure("e" + n, n)]); };
   const remove = (id: string) => setEnclosures((l) => (l.length > 1 ? l.filter((e) => e.id !== id) : l));
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(`${window.location.origin}/showers/request/${companySlug}`); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); } catch { /* ignore */ }
+  };
+
+  // Merge the project-level gaps into an enclosure so the drawing/glass list
+  // reflect the current deductions without mutating each row.
+  const effCfg = (e: EnclosureConfig): EnclosureConfig => ({ ...e, measure: { outOfSquare: !!e.measure?.outOfSquare, openings: e.measure?.openings || [], deductions } });
+  const toggleOOS = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id) return e;
+    if (on) { const openings = (e.measure?.openings?.length ? e.measure.openings : defaultOpenings(e)); return { ...e, measure: { outOfSquare: true, openings, deductions } }; }
+    return { ...e, measure: { outOfSquare: false, openings: e.measure?.openings || [], deductions } };
+  }));
+  const setOpening = (id: string, i: number, patch: Partial<Opening>) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id || !e.measure) return e;
+    const openings = e.measure.openings.map((o, j) => (j === i ? { ...o, ...patch } : o));
+    return { ...e, measure: { ...e.measure, openings } };
+  }));
 
   return (
     <div>
@@ -110,6 +143,7 @@ function Configurator() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {companySlug ? <button type="button" onClick={copyLink} className="text-sm text-emerald-700 hover:underline px-2 py-2">{linkCopied ? "Link copied!" : "🔗 Customer link"}</button> : null}
           <Link href="/showers/saved" className="text-sm text-slate-500 hover:text-slate-700 px-2 py-2">Saved</Link>
           <Link href="/showers/rates" className="text-sm text-emerald-700 hover:underline px-2 py-2">Edit rates</Link>
           <button onClick={add} className="rounded-lg border border-emerald-300 text-emerald-700 font-medium px-3 py-2.5 text-sm hover:bg-emerald-50">+ Add enclosure</button>
@@ -130,10 +164,34 @@ function Configurator() {
         </label>
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-white p-4 mb-6">
+        <button type="button" onClick={() => setShowGaps((v) => !v)} className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
+          Glass gaps / deductions <span className="text-slate-400">{showGaps ? "▲" : "▼"}</span>
+        </button>
+        {showGaps && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+              <NumberField label="Door hinge gap" value={deductions.doorHingeGap} onChange={(v) => setDeductions((d) => ({ ...d, doorHingeGap: v }))} step />
+              <NumberField label="Door strike gap" value={deductions.doorStrikeGap} onChange={(v) => setDeductions((d) => ({ ...d, doorStrikeGap: v }))} step />
+              <NumberField label="Door top gap" value={deductions.doorTopGap} onChange={(v) => setDeductions((d) => ({ ...d, doorTopGap: v }))} step />
+              <NumberField label="Door bottom gap" value={deductions.doorBottomGap} onChange={(v) => setDeductions((d) => ({ ...d, doorBottomGap: v }))} step />
+              <NumberField label="Panel side gap" value={deductions.panelSideGap} onChange={(v) => setDeductions((d) => ({ ...d, panelSideGap: v }))} step />
+              <NumberField label="Panel top gap" value={deductions.panelTopGap} onChange={(v) => setDeductions((d) => ({ ...d, panelTopGap: v }))} step />
+              <NumberField label="Panel bottom gap" value={deductions.panelBottomGap} onChange={(v) => setDeductions((d) => ({ ...d, panelBottomGap: v }))} step />
+              <NumberField label="Sliding overlap" value={deductions.slidingOverlap} onChange={(v) => setDeductions((d) => ({ ...d, slidingOverlap: v }))} step />
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">Gaps subtracted from field openings to get ordered glass sizes (inches). Applies to every enclosure and saves with the estimate.</p>
+          </>
+        )}
+      </div>
+
       <div className="space-y-6">
         {enclosures.map((e, idx) => {
           const est = project.enclosures[idx];
           const style = SHOWER_STYLES.find((s) => s.id === e.style)!;
+          const eff = effCfg(e);
+          const draw = layoutEnclosure(eff);
+          const oos = !!e.measure?.outOfSquare;
           return (
             <div key={e.id} className="rounded-xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3 bg-emerald-50 border-b border-emerald-100">
@@ -205,6 +263,58 @@ function Configurator() {
                   </div>
                 </div>
               </div>
+
+              <div className="border-t border-emerald-100 px-5 py-5">
+                <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                  <h3 className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Shop drawing &amp; glass sizes</h3>
+                  <div className="flex items-center gap-3">
+                    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs">
+                      <button type="button" onClick={() => setPlanView(false)} className={(!planView ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50") + " px-2.5 py-1"}>Elevation</button>
+                      <button type="button" onClick={() => setPlanView(true)} className={(planView ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50") + " px-2.5 py-1"}>Plan</button>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={oos} onChange={(ev) => toggleOOS(e.id, ev.target.checked)} className="accent-emerald-600" />
+                      Walls out of square
+                    </label>
+                  </div>
+                </div>
+                <div className="grid lg:grid-cols-2 gap-5">
+                  <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50 p-2">
+                    {planView ? <ShowerPlan cfg={eff} /> : <ShowerDrawing cfg={eff} />}
+                  </div>
+                  <div>
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-left text-[11px] text-slate-500 uppercase"><th className="py-1 font-semibold">Panel</th><th className="py-1 font-semibold">Glass size to order</th></tr></thead>
+                      <tbody>
+                        {draw.panels.map((p, pi) => (
+                          <tr key={pi} className="border-t border-slate-100 align-top">
+                            <td className="py-1.5 pr-3 text-slate-700 whitespace-nowrap">{p.label}</td>
+                            <td className="py-1.5 font-medium text-slate-900">{p.square ? (formatIn(p.wTop) + " × " + formatIn(p.hLeft)) : panelSizeLabel(p)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-[11px] text-slate-400 mt-2">{eff.thickness} {eff.glass} &middot; sizes include shop gaps, ready to cut. Price above uses nominal size.</p>
+                  </div>
+                </div>
+                {oos && e.measure && e.measure.openings.length > 0 && (
+                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <div className="text-[11px] font-semibold text-amber-800 uppercase tracking-wide mb-2">Measured openings (inches)</div>
+                    <div className="space-y-2">
+                      {e.measure.openings.map((o, oi) => (
+                        <div key={oi} className="grid grid-cols-5 gap-2 items-end">
+                          <div className="text-xs text-slate-600 pb-1.5">{o.label}</div>
+                          <NumberField label="W top" value={o.widthTop} onChange={(v) => setOpening(e.id, oi, { widthTop: v })} step />
+                          <NumberField label="W bottom" value={o.widthBottom} onChange={(v) => setOpening(e.id, oi, { widthBottom: v })} step />
+                          <NumberField label="H left" value={o.heightLeft} onChange={(v) => setOpening(e.id, oi, { heightLeft: v })} step />
+                          <NumberField label="H right" value={o.heightRight} onChange={(v) => setOpening(e.id, oi, { heightRight: v })} step />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-amber-700 mt-2">Enter top &amp; bottom widths and left &amp; right heights — the drawing and glass sizes become true trapezoids.</p>
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
@@ -245,11 +355,11 @@ function Configurator() {
   );
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function NumberField({ label, value, onChange, step }: { label: string; value: number; onChange: (v: number) => void; step?: boolean }) {
   return (
     <label className="block">
       <span className="block text-[11px] text-slate-500 mb-1">{label}</span>
-      <input type="number" min={0} value={Number.isFinite(value) ? value : 0}
+      <input type="number" min={0} step={step ? 0.0625 : undefined} value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
         className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
     </label>
