@@ -64,6 +64,7 @@ export interface EnclosureConfig {
   openingHeightIn?: number;    // floor-to-header
   sizeFromOpening?: boolean;   // size the glass from the opening (vs panel-first)
   ponyWall?: PonyWall;         // knee-wall + 90° return + notched panel
+  hardware?: HardwareLayout;   // adjustable hole / hinge / clamp positions
 }
 
 // ---- Shop drawing / accurate glass sizing (additive, optional) ----
@@ -125,17 +126,32 @@ export interface StandardSize { label: string; widthIn: number; heightIn: number
 // Standard opening sizes by door family (inches). "Custom" lets the shop type its own.
 export const STANDARD_SIZES: Record<DoorType, StandardSize[]> = {
   hinged: [
+    { label: '22" × 72"', widthIn: 22, heightIn: 72 },
     { label: '24" × 72"', widthIn: 24, heightIn: 72 },
+    { label: '24" × 74"', widthIn: 24, heightIn: 74 },
+    { label: '26" × 72"', widthIn: 26, heightIn: 72 },
+    { label: '26" × 76"', widthIn: 26, heightIn: 76 },
     { label: '28" × 72"', widthIn: 28, heightIn: 72 },
+    { label: '28" × 76"', widthIn: 28, heightIn: 76 },
     { label: '30" × 72"', widthIn: 30, heightIn: 72 },
+    { label: '30" × 74"', widthIn: 30, heightIn: 74 },
+    { label: '30" × 76"', widthIn: 30, heightIn: 76 },
+    { label: '32" × 72"', widthIn: 32, heightIn: 72 },
     { label: '32" × 76"', widthIn: 32, heightIn: 76 },
+    { label: '32" × 78"', widthIn: 32, heightIn: 78 },
     { label: '34" × 76"', widthIn: 34, heightIn: 76 },
+    { label: '34" × 78"', widthIn: 34, heightIn: 78 },
+    { label: '36" × 72"', widthIn: 36, heightIn: 72 },
+    { label: '36" × 76"', widthIn: 36, heightIn: 76 },
     { label: '36" × 78"', widthIn: 36, heightIn: 78 },
   ],
   pivot: [
+    { label: '28" × 76"', widthIn: 28, heightIn: 76 },
     { label: '30" × 76"', widthIn: 30, heightIn: 76 },
+    { label: '32" × 78"', widthIn: 32, heightIn: 78 },
     { label: '34" × 78"', widthIn: 34, heightIn: 78 },
     { label: '36" × 78"', widthIn: 36, heightIn: 78 },
+    { label: '36" × 80"', widthIn: 36, heightIn: 80 },
   ],
   'single-slider': [
     { label: '48" × 72"', widthIn: 48, heightIn: 72 },
@@ -180,6 +196,77 @@ export interface PonyWall {
 export const DEFAULT_PONY_WALL: PonyWall = {
   heightIn: 42, hasReturn: true, returnWidthIn: 30, notched: true,
   notchWidthIn: 6, notchHeightIn: 42, panelWidthIn: 24, panelHeightIn: 76,
+};
+
+// ---- Popular models (quick-pick presets) ----
+// Brand-neutral configs modeled on the frameless systems shops sell most (the
+// familiar CRL "Geneva / Cambridge / Melrose / Serenity / Crescent" families).
+// Picking one just seeds style + door type + a common size + glass + finish;
+// everything stays fully editable afterward. Additive — nothing else depends on it.
+export interface PopularModel {
+  id: string;
+  name: string;
+  blurb: string;
+  doorType: DoorType;
+  style: ShowerStyle;
+  widthIn: number;
+  heightIn: number;
+  thickness: GlassThickness;
+  finish: Finish;
+}
+
+export const POPULAR_MODELS: PopularModel[] = [
+  { id: 'geneva-door', name: 'Geneva-Style Door', blurb: 'Frameless wall-mount hinged door', doorType: 'hinged', style: 'single-door', widthIn: 30, heightIn: 76, thickness: '3/8"', finish: 'chrome' },
+  { id: 'cambridge-door-panel', name: 'Cambridge-Style Door + Panel', blurb: 'Hinged door with inline fixed panel', doorType: 'hinged', style: 'door-inline-panel', widthIn: 30, heightIn: 76, thickness: '3/8"', finish: 'brushed-nickel' },
+  { id: 'junior-90-return', name: '90° Return (Junior-Style)', blurb: 'Door + return panel on the adjacent wall', doorType: 'hinged', style: 'corner-return', widthIn: 30, heightIn: 76, thickness: '3/8"', finish: 'chrome' },
+  { id: 'melrose-inline-3', name: 'Melrose-Style Inline 3-Panel', blurb: 'Panel + door + panel across a wide opening', doorType: 'hinged', style: 'inline-3-panel', widthIn: 30, heightIn: 76, thickness: '1/2"', finish: 'matte-black' },
+  { id: 'pivot-spa', name: 'Pivot Spa Door', blurb: 'Heavy 1/2" pivot door, walk-in / spa', doorType: 'pivot', style: 'single-door', widthIn: 34, heightIn: 78, thickness: '1/2"', finish: 'matte-black' },
+  { id: 'neo-angle', name: 'Neo-Angle Corner', blurb: 'Five-sided angled corner enclosure', doorType: 'hinged', style: 'neo-angle', widthIn: 30, heightIn: 76, thickness: '3/8"', finish: 'brushed-nickel' },
+  { id: 'serenity-bypass', name: 'Serenity-Style Bypass Slider', blurb: 'Two bypassing sliding panels', doorType: 'bypass', style: 'sliding-bypass', widthIn: 60, heightIn: 76, thickness: '3/8"', finish: 'brushed-nickel' },
+  { id: 'crescent-single-slider', name: 'Crescent-Style Single Slider', blurb: 'One sliding panel bypassing one fixed', doorType: 'single-slider', style: 'sliding-bypass', widthIn: 56, heightIn: 72, thickness: '3/8"', finish: 'chrome' },
+  { id: 'barn-slider', name: 'Barn-Style Slider', blurb: 'Top-hung roller on an exposed track', doorType: 'barn', style: 'sliding-bypass', widthIn: 60, heightIn: 78, thickness: '3/8"', finish: 'matte-black' },
+  { id: 'tub-slider', name: 'Tub Slider', blurb: 'Bypass doors over a bathtub', doorType: 'tub-slider', style: 'sliding-bypass', widthIn: 60, heightIn: 58, thickness: '3/8"', finish: 'chrome' },
+];
+
+// ---- Hardware layout: dealer-adjustable holes, hinges & clamps (additive) ----
+// Every enclosure can carry an optional hardware layout. When absent, the shop
+// order simply omits hole positions (old estimates are unaffected). When present
+// with useStandard=true, positions are auto-placed from HW_STD; turning that off
+// lets the dealer drag each hole/clamp to an exact measured position.
+export type HardwareKind = 'hinge' | 'handle' | 'clamp' | 'towel-bar' | 'hole';
+
+export interface HardwarePlacement {
+  id: string;
+  kind: HardwareKind;
+  label: string;
+  panel: OpeningKind;    // which lite kind it sits on
+  panelIndex?: number;   // which lite (left-to-right) — for the diagram
+  fromTopIn: number;     // vertical center, from the top edge of the glass
+  fromEdgeIn: number;    // horizontal center, from the near vertical edge
+  diaIn?: number;        // hole diameter (holes / handles)
+}
+
+export interface HardwareLayout {
+  enabled: boolean;         // show hardware layout for this enclosure
+  useStandard: boolean;     // auto-place from HW_STD (off = fully custom)
+  handleCtcIn: number;      // back-to-back handle center-to-center
+  handleHeightIn: number;   // handle center height from the floor
+  clampsPerJoint: number;   // clamps per fixed-panel edge (2 or 3)
+  placements: HardwarePlacement[]; // edited/custom placements
+}
+
+export const DEFAULT_HARDWARE: HardwareLayout = {
+  enabled: true, useStandard: true, handleCtcIn: 6, handleHeightIn: 40, clampsPerJoint: 2, placements: [],
+};
+
+// Standard frameless placement rules (inches) — editable defaults per shop,
+// matching common CRL install guidance.
+export const HW_STD = {
+  hingeInsetFromEndIn: 8,      // hinge center this far from top & bottom of the door
+  tallDoorIn: 74,             // >= this height (or 1/2" glass) => add a center hinge
+  clampInsetFromEndIn: 8,     // side-panel clamp center this far from each end
+  handleFromLatchEdgeIn: 2.5, // handle center this far in from the latch/strike edge
+  holeDiaIn: 0.5,             // standard back-to-back knob hole diameter
 };
 
 export interface RateTable {

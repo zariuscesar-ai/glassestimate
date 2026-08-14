@@ -6,7 +6,7 @@ import { SHOWER_STYLES, FINISHES } from "@/lib/shower/types";
 import type { EnclosureConfig, RateTable } from "@/lib/shower/types";
 import { priceEnclosure } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, planIsInformative, ponyWallRows, type GlassPanel } from "@/lib/shower/glass";
+import { layoutEnclosure, formatIn, panelSizeLabel, planIsInformative, ponyWallRows, hardwareRows, type GlassPanel } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 
@@ -58,6 +58,8 @@ function orderText(est: Est, company: Company | null): string {
     L.push(`${c.label || "Enclosure " + (i + 1)} — ${style ? style.name : ""} — ${c.thickness} ${c.glass}${finish ? `, ${finish.name}` : ""}`);
     layoutEnclosure(c).panels.forEach((p) => L.push(`   ${p.label}: ${panelSize(p)}`));
     ponyWallRows(c).forEach((r) => L.push(`   ${r.label}: ${r.size}`));
+    const hwr = hardwareRows(c);
+    if (hwr.length) { L.push(`   Hardware holes & clamps:`); hwr.forEach((r) => L.push(`     ${r.label}: ${r.size}`)); }
     const cs = cutoutSummary(c);
     if (cs) L.push(`   Cutouts/hardware: ${cs}`);
     L.push("");
@@ -234,6 +236,12 @@ export default function QuotePage({ params }: { params: { id: string } }) {
                           <tr key={"pw" + ri} className="border-t border-slate-100 align-top">
                             <td className="py-1.5 pr-3 text-emerald-700 whitespace-nowrap">{r.label}</td>
                             <td className="py-1.5 font-medium text-slate-900">{r.size}</td>
+                          </tr>
+                        ))}
+                        {hardwareRows(c).map((r, ri) => (
+                          <tr key={"hw" + ri} className="border-t border-slate-100 align-top">
+                            <td className="py-1.5 pr-3 text-violet-700 whitespace-nowrap">{r.label}</td>
+                            <td className="py-1.5 text-slate-600 text-xs">{r.size}</td>
                           </tr>
                         ))}
                       </tbody>

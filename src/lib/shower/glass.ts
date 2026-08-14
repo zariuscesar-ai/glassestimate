@@ -2,8 +2,8 @@
 // order-ready glass panel sizes and to-scale quads for the elevation drawing.
 // Pure functions, no deps — unit-testable.
 
-import type { EnclosureConfig, Opening, OpeningKind, Deductions, ShowerStyle, GlassThickness, DoorType } from './types';
-import { DEFAULT_DEDUCTIONS } from './types';
+import type { EnclosureConfig, Opening, OpeningKind, Deductions, ShowerStyle, GlassThickness, DoorType, HardwarePlacement } from './types';
+import { DEFAULT_DEDUCTIONS, HW_STD } from './types';
 
 const SLIDING_DOOR_TYPES: DoorType[] = ['single-slider', 'bypass', 'barn', 'tub-slider'];
 export function isSlidingDoor(dt?: DoorType): boolean { return !!dt && SLIDING_DOOR_TYPES.includes(dt); }
@@ -144,6 +144,56 @@ export function ponyWallRows(cfg: EnclosureConfig): { label: string; size: strin
     rows.push({ label: 'Notched panel (custom cut)', size: `${formatIn(w)} × ${formatIn(h)} — notch ${formatIn(pw.notchWidthIn)} × ${formatIn(pw.notchHeightIn)}` });
   }
   return rows;
+}
+
+// ---- Hardware layout: standard hole / hinge / clamp positions ----
+// Build the standard placements from the door type, door height and the panels
+// present. Dealers can then switch to custom and nudge any position. Pure math.
+export function standardHardware(cfg: EnclosureConfig): HardwarePlacement[] {
+  const hw = cfg.hardware;
+  const { panels } = layoutEnclosure(cfg);
+  const out: HardwarePlacement[] = [];
+  const half = cfg.thickness === '1/2"';
+  panels.forEach((p, idx) => {
+    const H = Math.max(1, p.hLeft || cfg.heightIn || 76);
+    const W = Math.max(1, p.wTop || 24);
+    if (p.kind === 'door') {
+      const three = half || H >= HW_STD.tallDoorIn;
+      out.push({ id: `hg-${idx}-t`, kind: 'hinge', label: 'Top hinge', panel: 'door', panelIndex: idx, fromTopIn: HW_STD.hingeInsetFromEndIn, fromEdgeIn: 0 });
+      if (three) out.push({ id: `hg-${idx}-m`, kind: 'hinge', label: 'Center hinge', panel: 'door', panelIndex: idx, fromTopIn: round16(H / 2), fromEdgeIn: 0 });
+      out.push({ id: `hg-${idx}-b`, kind: 'hinge', label: 'Bottom hinge', panel: 'door', panelIndex: idx, fromTopIn: round16(Math.max(1, H - HW_STD.hingeInsetFromEndIn)), fromEdgeIn: 0 });
+      // Back-to-back handle: two holes, centered at handle height, CTC apart.
+      const hCenter = round16(Math.max(1, H - (hw?.handleHeightIn ?? 40)));
+      const ctc = hw?.handleCtcIn ?? 6;
+      const edge = round16(Math.max(0, W - HW_STD.handleFromLatchEdgeIn));
+      out.push({ id: `hn-${idx}-u`, kind: 'handle', label: 'Handle hole (upper)', panel: 'door', panelIndex: idx, fromTopIn: round16(Math.max(1, hCenter - ctc / 2)), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn });
+      out.push({ id: `hn-${idx}-l`, kind: 'handle', label: 'Handle hole (lower)', panel: 'door', panelIndex: idx, fromTopIn: round16(hCenter + ctc / 2), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn });
+    } else if (p.kind === 'panel' || p.kind === 'return') {
+      const n = Math.max(2, Math.min(3, hw?.clampsPerJoint ?? 2));
+      for (let i = 0; i < n; i++) {
+        const t = HW_STD.clampInsetFromEndIn + (i * (H - 2 * HW_STD.clampInsetFromEndIn)) / (n - 1);
+        out.push({ id: `cl-${idx}-${i}`, kind: 'clamp', label: `${p.label} clamp ${i + 1}`, panel: p.kind, panelIndex: idx, fromTopIn: round16(t), fromEdgeIn: 0 });
+      }
+    }
+  });
+  return out;
+}
+
+/** Resolve the placements to show: custom list if the dealer edited them,
+ *  otherwise the standard auto-placed set. */
+export function resolveHardware(cfg: EnclosureConfig): HardwarePlacement[] {
+  const hw = cfg.hardware;
+  if (!hw || !hw.enabled) return [];
+  if (!hw.useStandard && hw.placements.length) return hw.placements;
+  return standardHardware(cfg);
+}
+
+/** Hole / hinge / clamp positions as order-sheet rows. */
+export function hardwareRows(cfg: EnclosureConfig): { label: string; size: string }[] {
+  return resolveHardware(cfg).map((h) => ({
+    label: h.label,
+    size: `${formatIn(h.fromTopIn)} from top · ${formatIn(h.fromEdgeIn)} from edge${h.diaIn ? ` · ⌀ ${formatIn(h.diaIn)}` : ''}`,
+  }));
 }
 
 // ---- Top-down plan (footprint) ----

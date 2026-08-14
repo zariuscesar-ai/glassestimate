@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL } from "@/lib/shower/types";
-import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize, PonyWall } from "@/lib/shower/types";
+import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL, POPULAR_MODELS, DEFAULT_HARDWARE } from "@/lib/shower/types";
+import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize, PonyWall, PopularModel, HardwareLayout, HardwarePlacement } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows } from "@/lib/shower/glass";
+import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 import Link from "next/link";
@@ -145,6 +145,33 @@ function Configurator() {
   }));
   const togglePony = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, ponyWall: on ? { ...DEFAULT_PONY_WALL, panelHeightIn: e.heightIn } : undefined } : e)));
   const setPony = (id: string, patch: Partial<PonyWall>) => setEnclosures((l) => l.map((e) => (e.id === id && e.ponyWall ? { ...e, ponyWall: { ...e.ponyWall, ...patch } } : e)));
+
+  // ---- Popular models (quick-pick presets) ----
+  const applyModel = (id: string, m: PopularModel) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id) return e;
+    const widthsIn = [...(DEFAULT_WIDTHS[m.style] || e.widthsIn)];
+    const di = doorIndex(m.style);
+    if (widthsIn[di] != null) widthsIn[di] = m.widthIn;
+    return { ...e, style: m.style, doorType: m.doorType, widthsIn, heightIn: m.heightIn, thickness: m.thickness, finish: m.finish, openingWidthIn: m.widthIn, openingHeightIn: m.heightIn + 2 };
+  }));
+
+  // ---- Hardware layout (holes / hinges / clamps) ----
+  const toggleHardware = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, hardware: on ? { ...(e.hardware || DEFAULT_HARDWARE), enabled: true } : (e.hardware ? { ...e.hardware, enabled: false } : undefined) } : e)));
+  const setHardware = (id: string, patch: Partial<HardwareLayout>) => setEnclosures((l) => l.map((e) => (e.id === id && e.hardware ? { ...e, hardware: { ...e.hardware, ...patch } } : e)));
+  // Switch to custom positions, seeding from the standard set so nothing is lost.
+  const customizeHardware = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id) return e;
+    const base = e.hardware || { ...DEFAULT_HARDWARE };
+    if (!on) return { ...e, hardware: { ...base, useStandard: true } };
+    const placements = base.placements.length ? base.placements : standardHardware(effCfg(e));
+    return { ...e, hardware: { ...base, useStandard: false, placements } };
+  }));
+  const setPlacement = (id: string, i: number, patch: Partial<HardwarePlacement>) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id || !e.hardware) return e;
+    const placements = e.hardware.placements.map((p, j) => (j === i ? { ...p, ...patch } : p));
+    return { ...e, hardware: { ...e.hardware, placements } };
+  }));
+  const resetPlacements = (id: string) => setEnclosures((l) => l.map((e) => (e.id === id && e.hardware ? { ...e, hardware: { ...e.hardware, placements: standardHardware(effCfg(e)) } } : e)));
   const toggleOOS = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => {
     if (e.id !== id) return e;
     if (on) { const openings = (e.measure?.openings?.length ? e.measure.openings : defaultOpenings(e)); return { ...e, measure: { outOfSquare: true, openings, deductions } }; }
@@ -230,6 +257,17 @@ function Configurator() {
               <div className="p-5 grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Popular models <span className="normal-case font-normal text-slate-400">— quick start, fully editable</span></label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {POPULAR_MODELS.map((m) => (
+                        <button key={m.id} type="button" onClick={() => applyModel(e.id, m)} title={m.blurb}
+                          className="rounded-full border border-slate-200 bg-slate-50 hover:border-emerald-400 hover:bg-emerald-50 text-slate-700 px-2.5 py-1 text-xs">
+                          {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Door type</label>
                     <div className="grid grid-cols-2 gap-2">
                       {DOOR_TYPES.map((dt) => (
@@ -302,6 +340,56 @@ function Configurator() {
                       <NumberField label="Hinge cutouts" value={e.cutouts.hingeCutouts} onChange={(v) => setCut(e.id, "hingeCutouts", v)} />
                       <NumberField label="Corner / knee-wall notches" value={e.cutouts.notches} onChange={(v) => setCut(e.id, "notches", v)} />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">
+                      <span>Hardware layout — holes &amp; clamps</span>
+                      <input type="checkbox" checked={!!e.hardware?.enabled} onChange={(ev) => toggleHardware(e.id, ev.target.checked)} className="accent-emerald-600" />
+                    </label>
+                    {e.hardware?.enabled && (
+                      <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          <NumberField label="Handle CTC" value={e.hardware.handleCtcIn} onChange={(v) => setHardware(e.id, { handleCtcIn: v })} step />
+                          <NumberField label="Handle height (floor)" value={e.hardware.handleHeightIn} onChange={(v) => setHardware(e.id, { handleHeightIn: v })} />
+                          <NumberField label="Clamps / panel" value={e.hardware.clampsPerJoint} onChange={(v) => setHardware(e.id, { clampsPerJoint: Math.max(2, Math.min(3, Math.round(v))) })} />
+                        </div>
+                        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                          <input type="checkbox" checked={!e.hardware.useStandard} onChange={(ev) => customizeHardware(e.id, ev.target.checked)} className="accent-emerald-600" />
+                          Customize hole &amp; clamp positions
+                        </label>
+                        <div className="flex gap-3 items-start">
+                          <div className="flex-1 min-w-0">
+                            {e.hardware.useStandard ? (
+                              <div className="text-[11px] text-slate-500 space-y-0.5 max-h-44 overflow-auto pr-1">
+                                {resolveHardware(effCfg(e)).map((h, hi) => (
+                                  <div key={hi} className="flex items-center justify-between gap-2">
+                                    <span className="text-slate-600 whitespace-nowrap">{h.label}</span>
+                                    <span className="text-slate-400 whitespace-nowrap">{formatIn(h.fromTopIn)} top · {formatIn(h.fromEdgeIn)} edge</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5 max-h-56 overflow-auto pr-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] text-slate-400">From top · from near edge (in)</span>
+                                  <button type="button" onClick={() => resetPlacements(e.id)} className="text-[11px] text-emerald-700 hover:underline">Reset to standard</button>
+                                </div>
+                                {(e.hardware.placements || []).map((p, pi) => (
+                                  <div key={p.id} className="grid grid-cols-[1fr_auto_auto] gap-1.5 items-center">
+                                    <span className="text-[11px] text-slate-600 truncate" title={p.label}>{p.label}</span>
+                                    <input type="number" step={0.0625} value={p.fromTopIn} onChange={(ev) => setPlacement(e.id, pi, { fromTopIn: parseFloat(ev.target.value) || 0 })} className="w-16 rounded border border-slate-300 px-1.5 py-1 text-xs" />
+                                    <input type="number" step={0.0625} value={p.fromEdgeIn} onChange={(ev) => setPlacement(e.id, pi, { fromEdgeIn: parseFloat(ev.target.value) || 0 })} className="w-16 rounded border border-slate-300 px-1.5 py-1 text-xs" />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <HardwareMap cfg={effCfg(e)} />
+                        </div>
+                        <p className="text-[11px] text-slate-400">Standard positions follow common CRL install spacing. <span className="text-teal-700">●</span> hinge <span className="text-amber-600">●</span> handle <span className="text-violet-600">●</span> clamp. Positions print on the shop order below.</p>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -385,6 +473,12 @@ function Configurator() {
                             <td className="py-1.5 font-medium text-slate-900">{r.size}</td>
                           </tr>
                         ))}
+                        {hardwareRows(eff).map((r, ri) => (
+                          <tr key={"hw" + ri} className="border-t border-slate-100 align-top">
+                            <td className="py-1.5 pr-3 text-violet-700 whitespace-nowrap">{r.label}</td>
+                            <td className="py-1.5 text-slate-600 text-xs">{r.size}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                     <p className="text-[11px] text-slate-400 mt-2">{eff.thickness} {eff.glass} &middot; sizes include shop gaps, ready to cut. Price above uses nominal size.</p>
@@ -455,6 +549,37 @@ function NotchedPanel({ pw }: { pw: PonyWall }) {
   return (
     <svg viewBox={`-1 -1 ${W + 2} ${H + 2}`} width="66" style={{ display: "block" }} role="img" aria-label="Notched panel shape">
       <polygon points={pts} fill="#cfe6ea" fillOpacity={0.6} stroke="#0f766e" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+// Schematic elevation with hole / hinge / clamp dots plotted from their measured
+// positions. Read-only; mirrors the panels of the current enclosure.
+function HardwareMap({ cfg }: { cfg: EnclosureConfig }) {
+  const { panels, totalW, maxH } = layoutEnclosure(cfg);
+  const places = resolveHardware(cfg);
+  if (!totalW || !maxH) return null;
+  const scale = 150 / Math.max(1, totalW);
+  const pad = 8;
+  const W = totalW * scale + pad * 2, H = maxH * scale + pad * 2;
+  let cursor = 0;
+  const offs = panels.map((p) => { const o = cursor; cursor += Math.max(p.wTop, p.wBottom); return o; });
+  const color = (k: HardwarePlacement["kind"]) => (k === "hinge" ? "#0f766e" : k === "handle" ? "#d97706" : k === "clamp" ? "#7c3aed" : "#64748b");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="120" style={{ display: "block", flex: "none" }} role="img" aria-label="Hardware positions">
+      {panels.map((p, i) => {
+        const px = pad + offs[i] * scale;
+        const pw = Math.max(1, Math.max(p.wTop, p.wBottom)) * scale;
+        const ph = Math.max(1, p.hLeft || maxH) * scale;
+        return (
+          <g key={i}>
+            <rect x={px} y={pad} width={pw} height={ph} fill="#eef6f7" stroke="#94a3b8" strokeWidth={1} />
+            {places.filter((pl) => (pl.panelIndex ?? -1) === i).map((pl, j) => (
+              <circle key={j} cx={px + Math.min(pw, pl.fromEdgeIn * scale)} cy={pad + Math.min(ph, pl.fromTopIn * scale)} r={2.6} fill={color(pl.kind)} />
+            ))}
+          </g>
+        );
+      })}
     </svg>
   );
 }
