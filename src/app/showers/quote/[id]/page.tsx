@@ -6,7 +6,7 @@ import { SHOWER_STYLES, FINISHES } from "@/lib/shower/types";
 import type { EnclosureConfig, RateTable } from "@/lib/shower/types";
 import { priceEnclosure } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, planIsInformative, ponyWallRows, hardwareRows, type GlassPanel } from "@/lib/shower/glass";
+import { layoutEnclosure, formatIn, panelSizeLabel, planIsInformative, ponyWallRows, hardwareRows, slidingExtras, type GlassPanel } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 
@@ -57,6 +57,7 @@ function orderText(est: Est, company: Company | null): string {
     const finish = FINISHES.find((f) => f.id === c.finish);
     L.push(`${c.label || "Enclosure " + (i + 1)} — ${style ? style.name : ""} — ${c.thickness} ${c.glass}${finish ? `, ${finish.name}` : ""}`);
     layoutEnclosure(c).panels.forEach((p) => L.push(`   ${p.label}: ${panelSize(p)}`));
+    slidingExtras(c).forEach((r) => L.push(`   ${r.label}: ${r.size}`));
     ponyWallRows(c).forEach((r) => L.push(`   ${r.label}: ${r.size}`));
     const hwr = hardwareRows(c);
     if (hwr.length) { L.push(`   Hardware holes & clamps:`); hwr.forEach((r) => L.push(`     ${r.label}: ${r.size}`)); }
@@ -230,6 +231,12 @@ export default function QuotePage({ params }: { params: { id: string } }) {
                           <tr key={pi} className="border-t border-slate-100 align-top">
                             <td className="py-1.5 pr-3 text-slate-700 whitespace-nowrap">{p.label}</td>
                             <td className="py-1.5 font-medium text-slate-900">{panelSize(p)}</td>
+                          </tr>
+                        ))}
+                        {slidingExtras(c).map((r, ri) => (
+                          <tr key={"sx" + ri} className="border-t border-slate-100 align-top">
+                            <td className="py-1.5 pr-3 text-sky-700 whitespace-nowrap">{r.label}</td>
+                            <td className="py-1.5 text-slate-600 text-xs">{r.size}</td>
                           </tr>
                         ))}
                         {ponyWallRows(c).map((r, ri) => (

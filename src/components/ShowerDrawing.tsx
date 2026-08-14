@@ -17,13 +17,14 @@ const pts = (q: Quad) => `${q.tl.x},${q.tl.y} ${q.tr.x},${q.tr.y} ${q.br.x},${q.
 const cen = (q: Quad) => ({ x: (q.tl.x + q.tr.x + q.bl.x + q.br.x) / 4, y: (q.tl.y + q.tr.y + q.bl.y + q.br.y) / 4 });
 
 export default function ShowerDrawing({ cfg }: { cfg: EnclosureConfig }) {
-  const { panels, totalW, maxH } = layoutEnclosure(cfg);
+  const { panels, totalW, maxH, track } = layoutEnclosure(cfg);
   if (!panels.length || totalW <= 0 || maxH <= 0) return null;
   const tint = GLASS_TINT[cfg.glass] || '#cfe6ea';
   const finish = FINISH_COLOR[cfg.finish] || '#aeb6bf';
 
   const padX = Math.max(9, maxH * 0.16), padT = Math.max(7, maxH * 0.10), padB = Math.max(11, maxH * 0.15);
-  const vbW = totalW + padX * 2, vbH = maxH + padT + padB;
+  const rightExtent = Math.max(totalW, track ? track.x2 : 0); // exposed barn track runs past the opening
+  const vbW = rightExtent + padX * 2, vbH = maxH + padT + padB;
   const f = Math.max(2.2, maxH * 0.038);        // dimension font (inches)
   const fs = Math.max(1.9, maxH * 0.03);         // small label font
 
@@ -59,6 +60,15 @@ export default function ShowerDrawing({ cfg }: { cfg: EnclosureConfig }) {
                 </g>
               )}
 
+              {/* sliding lite: handle on the leading edge + slide-direction hint */}
+              {p.kind === 'sliding' && p.role === 'sliding' && (
+                <g>
+                  <rect x={(i % 2 === 0 ? gRight - 2.4 : gLeft + 1.0)} y={gTop + gh * 0.40} width={1.4} height={gh * 0.20} rx={0.7} fill={finish} />
+                  <line x1={c.x - 3} y1={gTop + gh * 0.5} x2={c.x + 3} y2={gTop + gh * 0.5} stroke={finish} strokeOpacity={0.55} strokeWidth={1.3} vectorEffect="non-scaling-stroke" />
+                  <polygon points={`${c.x + 3},${gTop + gh * 0.5} ${c.x + 1.6},${gTop + gh * 0.5 - 1.3} ${c.x + 1.6},${gTop + gh * 0.5 + 1.3}`} fill={finish} fillOpacity={0.55} />
+                </g>
+              )}
+
               {/* panel label + ordered size */}
               <text x={c.x} y={c.y - fs * 0.3} textAnchor="middle" fontSize={fs} fill="#0f172a" fontWeight={600}>{p.label}</text>
               <text x={c.x} y={c.y + fs * 1.1} textAnchor="middle" fontSize={fs} fill="#0f766e" fontWeight={700}>
@@ -78,6 +88,21 @@ export default function ShowerDrawing({ cfg }: { cfg: EnclosureConfig }) {
             </g>
           );
         })}
+
+        {/* sliding header / exposed roller track */}
+        {track && (
+          track.exposed ? (
+            <g>
+              {/* exposed barn rail sits just above the glass and runs past the opening */}
+              <rect x={track.x1} y={-Math.max(1.6, maxH * 0.03)} width={track.x2 - track.x1} height={Math.max(1.4, maxH * 0.022)} rx={0.6} fill={finish} />
+              <circle cx={track.x1 + (track.x2 - track.x1) * 0.30} cy={-Math.max(1.6, maxH * 0.03) + Math.max(0.7, maxH * 0.011)} r={Math.max(0.8, maxH * 0.012)} fill="#f8fafc" stroke={finish} strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
+              <circle cx={track.x1 + (track.x2 - track.x1) * 0.62} cy={-Math.max(1.6, maxH * 0.03) + Math.max(0.7, maxH * 0.011)} r={Math.max(0.8, maxH * 0.012)} fill="#f8fafc" stroke={finish} strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
+              <text x={(track.x1 + track.x2) / 2} y={-Math.max(1.6, maxH * 0.03) - fs * 0.4} textAnchor="middle" fontSize={fs} fill="#64748b">roller track {formatIn(track.x2 - track.x1)}</text>
+            </g>
+          ) : (
+            <rect x={track.x1} y={0} width={track.x2 - track.x1} height={Math.max(1.0, maxH * 0.016)} rx={0.4} fill={finish} fillOpacity={0.85} />
+          )
+        )}
 
         {/* left height dimension */}
         <text x={-padX * 0.45} y={maxH / 2} textAnchor="middle" fontSize={f} fill="#334155" fontWeight={600} transform={`rotate(-90 ${-padX * 0.45} ${maxH / 2})`}>

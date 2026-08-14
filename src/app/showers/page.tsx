@@ -5,7 +5,7 @@ import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, 
 import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize, PonyWall, PopularModel, HardwareLayout, HardwarePlacement } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows } from "@/lib/shower/glass";
+import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows, slidingExtras } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 import Link from "next/link";
@@ -465,6 +465,12 @@ function Configurator() {
                           <tr key={pi} className="border-t border-slate-100 align-top">
                             <td className="py-1.5 pr-3 text-slate-700 whitespace-nowrap">{p.label}</td>
                             <td className="py-1.5 font-medium text-slate-900">{p.square ? (formatIn(p.wTop) + " × " + formatIn(p.hLeft)) : panelSizeLabel(p)}</td>
+                          </tr>
+                        ))}
+                        {slidingExtras(eff).map((r, ri) => (
+                          <tr key={"sx" + ri} className="border-t border-slate-100 align-top">
+                            <td className="py-1.5 pr-3 text-sky-700 whitespace-nowrap">{r.label}</td>
+                            <td className="py-1.5 text-slate-600 text-xs">{r.size}</td>
                           </tr>
                         ))}
                         {ponyWallRows(eff).map((r, ri) => (

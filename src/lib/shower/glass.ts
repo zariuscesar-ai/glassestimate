@@ -19,6 +19,19 @@ export interface GlassPanel {
   square: boolean;           // all four edges reduce to a plain W x H
   openingQuad: Quad;         // measured opening, in enclosure inches (x from left, y down)
   glassQuad: Quad;           // glass after deductions
+  role?: 'fixed' | 'sliding'; // sliding families: which lite moves
+}
+
+// A header / roller track above a sliding opening. An exposed (barn) track runs
+// past the opening so the door can park clear; bypass/tub headers just span it.
+export interface SlideTrack { x1: number; x2: number; y: number; exposed: boolean; }
+
+// Which sliding family an enclosure uses (from the door type; defaults to bypass).
+export type SlideFamily = 'bypass' | 'single-slider' | 'barn' | 'tub-slider';
+export function slideFamily(cfg: EnclosureConfig): SlideFamily {
+  const dt = cfg.doorType;
+  if (dt === 'single-slider' || dt === 'barn' || dt === 'tub-slider') return dt;
+  return 'bypass';
 }
 
 // Which lites each style is made of, left-to-right, matched to widthsIn order.
@@ -79,9 +92,11 @@ function isSquare(o: Opening) { return Math.abs(o.widthTop - o.widthBottom) < 1e
  * Lay the enclosure out left-to-right and compute each glass panel's ordered
  * size + drawing quads. Sliding openings yield two bypassing panels.
  */
-export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; totalW: number; maxH: number } {
+export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; totalW: number; maxH: number; track?: SlideTrack | null } {
   const { openings, deductions } = resolveMeasure(cfg);
+  const fam = slideFamily(cfg);
   const panels: GlassPanel[] = [];
+  let track: SlideTrack | null = null;
   let x = 0, maxH = 0;
   for (const o of openings) {
     const advance = Math.max(o.widthTop, o.widthBottom);
@@ -89,16 +104,37 @@ export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; t
     const openingQuad: Quad = { tl: { x, y: 0 }, tr: { x: x + o.widthTop, y: 0 }, bl: { x, y: o.heightLeft }, br: { x: x + o.widthBottom, y: o.heightRight } };
 
     if (o.kind === 'sliding') {
-      // Two bypass panels; each ~ (opening + overlap)/2, square opening assumed.
-      const panelW = round16((o.widthTop + deductions.slidingOverlap) / 2);
+      const overlap = deductions.slidingOverlap;
       const gh = round16(o.heightLeft - deductions.panelTopGap - deductions.panelBottomGap);
       const top = deductions.panelTopGap, bot = o.heightLeft - deductions.panelBottomGap;
-      const mk = (x0: number, label: string): GlassPanel => ({
-        label, kind: 'sliding', wTop: panelW, wBottom: panelW, hLeft: gh, hRight: gh, square: true,
-        openingQuad, glassQuad: { tl: { x: x0, y: top }, tr: { x: x0 + panelW, y: top }, bl: { x: x0, y: bot }, br: { x: x0 + panelW, y: bot } },
+      const mk = (x0: number, w: number, label: string, role: 'fixed' | 'sliding'): GlassPanel => ({
+        label, kind: 'sliding', wTop: w, wBottom: w, hLeft: gh, hRight: gh, square: true, role,
+        openingQuad, glassQuad: { tl: { x: x0, y: top }, tr: { x: x0 + w, y: top }, bl: { x: x0, y: bot }, br: { x: x0 + w, y: bot } },
       });
-      panels.push(mk(x, 'Sliding panel (rear)'));
-      panels.push(mk(x + o.widthTop - panelW, 'Sliding panel (front)'));
+      const halfW = round16((o.widthTop + overlap) / 2);
+      if (fam === 'single-slider') {
+        // One fixed lite + one bypassing slider (equal panels).
+        panels.push(mk(x, halfW, 'Fixed panel', 'fixed'));
+        panels.push(mk(x + o.widthTop - halfW, halfW, 'Sliding panel', 'sliding'));
+        track = { x1: x, x2: x + o.widthTop, y: 0, exposed: false };
+      } else if (fam === 'barn') {
+        // Fixed lite covers half; a barn door slides across an exposed track that
+        // extends past the opening so the door parks clear of the entry.
+        const fixedW = round16(o.widthTop / 2);
+        const doorW = round16(o.widthTop / 2 + overlap);
+        panels.push(mk(x, fixedW, 'Fixed panel', 'fixed'));
+        panels.push(mk(x + o.widthTop - doorW, doorW, 'Barn door (sliding)', 'sliding'));
+        track = { x1: x, x2: x + o.widthTop + fixedW, y: 0, exposed: true };
+      } else if (fam === 'tub-slider') {
+        panels.push(mk(x, halfW, 'Tub bypass (rear)', 'sliding'));
+        panels.push(mk(x + o.widthTop - halfW, halfW, 'Tub bypass (front)', 'sliding'));
+        track = { x1: x, x2: x + o.widthTop, y: 0, exposed: false };
+      } else {
+        // Bypass — two bypassing sliding panels.
+        panels.push(mk(x, halfW, 'Sliding panel (rear)', 'sliding'));
+        panels.push(mk(x + o.widthTop - halfW, halfW, 'Sliding panel (front)', 'sliding'));
+        track = { x1: x, x2: x + o.widthTop, y: 0, exposed: false };
+      }
     } else {
       const ins = insets(o.kind, deductions);
       const wTop = round16(o.widthTop - ins.left - ins.right);
@@ -115,7 +151,19 @@ export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; t
     }
     x += advance;
   }
-  return { panels, totalW: x, maxH };
+  return { panels, totalW: x, maxH, track };
+}
+
+// Extra sliding parts for the glass list / shop order: the header or exposed
+// roller track that ships with a sliding family.
+export function slidingExtras(cfg: EnclosureConfig): { label: string; size: string }[] {
+  const { track } = layoutEnclosure(cfg);
+  if (!track) return [];
+  const len = Math.max(0, track.x2 - track.x1);
+  return [{
+    label: track.exposed ? 'Exposed roller track (barn)' : 'Header / track',
+    size: `${formatIn(len)} long${track.exposed ? ' — extends past opening so the door parks clear' : ''}`,
+  }];
 }
 
 // Suggest glass thickness: 1/2" once any panel is tall (> 80") or a span is very
