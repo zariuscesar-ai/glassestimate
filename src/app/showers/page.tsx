@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES } from "@/lib/shower/types";
-import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize } from "@/lib/shower/types";
+import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL } from "@/lib/shower/types";
+import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize, PonyWall } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness } from "@/lib/shower/glass";
+import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 import Link from "next/link";
@@ -143,6 +143,8 @@ function Configurator() {
     const heightIn = e.openingHeightIn ? Math.max(1, (e.openingHeightIn as number) - 2) : e.heightIn;
     return { ...e, widthsIn, heightIn };
   }));
+  const togglePony = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, ponyWall: on ? { ...DEFAULT_PONY_WALL, panelHeightIn: e.heightIn } : undefined } : e)));
+  const setPony = (id: string, patch: Partial<PonyWall>) => setEnclosures((l) => l.map((e) => (e.id === id && e.ponyWall ? { ...e, ponyWall: { ...e.ponyWall, ...patch } } : e)));
   const toggleOOS = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => {
     if (e.id !== id) return e;
     if (on) { const openings = (e.measure?.openings?.length ? e.measure.openings : defaultOpenings(e)); return { ...e, measure: { outOfSquare: true, openings, deductions } }; }
@@ -301,6 +303,35 @@ function Configurator() {
                       <NumberField label="Corner / knee-wall notches" value={e.cutouts.notches} onChange={(v) => setCut(e.id, "notches", v)} />
                     </div>
                   </div>
+
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">
+                      <span>Pony / knee wall</span>
+                      <input type="checkbox" checked={!!e.ponyWall} onChange={(ev) => togglePony(e.id, ev.target.checked)} className="accent-emerald-600" />
+                    </label>
+                    {e.ponyWall && (
+                      <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+                        <div className="grid grid-cols-3 gap-2 items-end">
+                          <NumberField label="Knee wall H" value={e.ponyWall.heightIn} onChange={(v) => setPony(e.id, { heightIn: v })} />
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2"><input type="checkbox" checked={e.ponyWall.hasReturn} onChange={(ev) => setPony(e.id, { hasReturn: ev.target.checked })} className="accent-emerald-600" />90° return</label>
+                          {e.ponyWall.hasReturn ? <NumberField label="Return W" value={e.ponyWall.returnWidthIn} onChange={(v) => setPony(e.id, { returnWidthIn: v })} /> : <div />}
+                        </div>
+                        <label className="flex items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={e.ponyWall.notched} onChange={(ev) => setPony(e.id, { notched: ev.target.checked })} className="accent-emerald-600" />Notched panel (custom cut)</label>
+                        {e.ponyWall.notched && (
+                          <div className="flex gap-3 items-center">
+                            <div className="grid grid-cols-2 gap-2 flex-1">
+                              <NumberField label="Panel W" value={e.ponyWall.panelWidthIn ?? 24} onChange={(v) => setPony(e.id, { panelWidthIn: v })} />
+                              <NumberField label="Panel H" value={e.ponyWall.panelHeightIn ?? e.heightIn} onChange={(v) => setPony(e.id, { panelHeightIn: v })} />
+                              <NumberField label="Notch W" value={e.ponyWall.notchWidthIn} onChange={(v) => setPony(e.id, { notchWidthIn: v })} />
+                              <NumberField label="Notch H" value={e.ponyWall.notchHeightIn} onChange={(v) => setPony(e.id, { notchHeightIn: v })} />
+                            </div>
+                            <NotchedPanel pw={e.ponyWall} />
+                          </div>
+                        )}
+                        <p className="text-[11px] text-slate-400">The 90° return + notched panel are added to the glass list / shop order below.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="rounded-lg bg-slate-50 border border-slate-100 p-4">
@@ -346,6 +377,12 @@ function Configurator() {
                           <tr key={pi} className="border-t border-slate-100 align-top">
                             <td className="py-1.5 pr-3 text-slate-700 whitespace-nowrap">{p.label}</td>
                             <td className="py-1.5 font-medium text-slate-900">{p.square ? (formatIn(p.wTop) + " × " + formatIn(p.hLeft)) : panelSizeLabel(p)}</td>
+                          </tr>
+                        ))}
+                        {ponyWallRows(eff).map((r, ri) => (
+                          <tr key={"pw" + ri} className="border-t border-slate-100 align-top">
+                            <td className="py-1.5 pr-3 text-emerald-700 whitespace-nowrap">{r.label}</td>
+                            <td className="py-1.5 font-medium text-slate-900">{r.size}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -408,6 +445,17 @@ function Configurator() {
         </div>
       </div>
     </div>
+  );
+}
+
+function NotchedPanel({ pw }: { pw: PonyWall }) {
+  const W = Math.max(1, pw.panelWidthIn ?? 24), H = Math.max(1, pw.panelHeightIn ?? 76);
+  const nW = Math.min(pw.notchWidthIn, W * 0.9), nH = Math.min(pw.notchHeightIn, H * 0.9);
+  const pts = `0,0 ${W},0 ${W},${H} ${nW},${H} ${nW},${H - nH} 0,${H - nH}`;
+  return (
+    <svg viewBox={`-1 -1 ${W + 2} ${H + 2}`} width="66" style={{ display: "block" }} role="img" aria-label="Notched panel shape">
+      <polygon points={pts} fill="#cfe6ea" fillOpacity={0.6} stroke="#0f766e" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 

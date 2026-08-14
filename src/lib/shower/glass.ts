@@ -128,6 +128,24 @@ export function suggestThickness(cfg: EnclosureConfig): GlassThickness {
   return maxH > 80 || maxSpan > 60 ? '1/2"' : '3/8"';
 }
 
+// Extra glass pieces for a pony/knee-wall enclosure: the 90° return that sits on
+// top of the knee wall, and the notched (custom-cut) panel beside the door.
+export function ponyWallRows(cfg: EnclosureConfig): { label: string; size: string }[] {
+  const pw = cfg.ponyWall;
+  if (!pw) return [];
+  const encH = cfg.heightIn || 76;
+  const rows: { label: string; size: string }[] = [];
+  if (pw.hasReturn) {
+    const h = round16(Math.max(1, encH - pw.heightIn));
+    rows.push({ label: '90° return (on pony wall)', size: `${formatIn(pw.returnWidthIn)} × ${formatIn(h)}` });
+  }
+  if (pw.notched) {
+    const w = pw.panelWidthIn ?? 24, h = pw.panelHeightIn ?? encH;
+    rows.push({ label: 'Notched panel (custom cut)', size: `${formatIn(w)} × ${formatIn(h)} — notch ${formatIn(pw.notchWidthIn)} × ${formatIn(pw.notchHeightIn)}` });
+  }
+  return rows;
+}
+
 // ---- Top-down plan (footprint) ----
 export interface PlanSeg { kind: OpeningKind; label: string; a: Pt; b: Pt; len: number; nomLen: number; door: boolean; }
 export interface PlanLayout { segs: PlanSeg[]; minX: number; maxX: number; minY: number; maxY: number; }

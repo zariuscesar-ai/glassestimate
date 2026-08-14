@@ -6,7 +6,7 @@ import { SHOWER_STYLES, FINISHES } from "@/lib/shower/types";
 import type { EnclosureConfig, RateTable } from "@/lib/shower/types";
 import { priceEnclosure } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, planIsInformative, type GlassPanel } from "@/lib/shower/glass";
+import { layoutEnclosure, formatIn, panelSizeLabel, planIsInformative, ponyWallRows, type GlassPanel } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 
@@ -57,6 +57,7 @@ function orderText(est: Est, company: Company | null): string {
     const finish = FINISHES.find((f) => f.id === c.finish);
     L.push(`${c.label || "Enclosure " + (i + 1)} — ${style ? style.name : ""} — ${c.thickness} ${c.glass}${finish ? `, ${finish.name}` : ""}`);
     layoutEnclosure(c).panels.forEach((p) => L.push(`   ${p.label}: ${panelSize(p)}`));
+    ponyWallRows(c).forEach((r) => L.push(`   ${r.label}: ${r.size}`));
     const cs = cutoutSummary(c);
     if (cs) L.push(`   Cutouts/hardware: ${cs}`);
     L.push("");
@@ -227,6 +228,12 @@ export default function QuotePage({ params }: { params: { id: string } }) {
                           <tr key={pi} className="border-t border-slate-100 align-top">
                             <td className="py-1.5 pr-3 text-slate-700 whitespace-nowrap">{p.label}</td>
                             <td className="py-1.5 font-medium text-slate-900">{panelSize(p)}</td>
+                          </tr>
+                        ))}
+                        {ponyWallRows(c).map((r, ri) => (
+                          <tr key={"pw" + ri} className="border-t border-slate-100 align-top">
+                            <td className="py-1.5 pr-3 text-emerald-700 whitespace-nowrap">{r.label}</td>
+                            <td className="py-1.5 font-medium text-slate-900">{r.size}</td>
                           </tr>
                         ))}
                       </tbody>

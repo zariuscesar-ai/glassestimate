@@ -170,13 +170,16 @@ export interface PonyWall {
   heightIn: number;       // knee-wall height from floor
   hasReturn: boolean;     // 90° return panel on the knee wall
   returnWidthIn: number;
-  notched: boolean;       // notched glass panel beside the door
+  notched: boolean;       // notched glass panel beside the door (custom cut)
   notchWidthIn: number;
   notchHeightIn: number;
+  panelWidthIn?: number;  // notched panel overall width
+  panelHeightIn?: number; // notched panel overall height
 }
 
 export const DEFAULT_PONY_WALL: PonyWall = {
-  heightIn: 42, hasReturn: true, returnWidthIn: 30, notched: true, notchWidthIn: 6, notchHeightIn: 42,
+  heightIn: 42, hasReturn: true, returnWidthIn: 30, notched: true,
+  notchWidthIn: 6, notchHeightIn: 42, panelWidthIn: 24, panelHeightIn: 76,
 };
 
 export interface RateTable {
