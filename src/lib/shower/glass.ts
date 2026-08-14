@@ -2,8 +2,11 @@
 // order-ready glass panel sizes and to-scale quads for the elevation drawing.
 // Pure functions, no deps — unit-testable.
 
-import type { EnclosureConfig, Opening, OpeningKind, Deductions, ShowerStyle, GlassThickness } from './types';
+import type { EnclosureConfig, Opening, OpeningKind, Deductions, ShowerStyle, GlassThickness, DoorType } from './types';
 import { DEFAULT_DEDUCTIONS } from './types';
+
+const SLIDING_DOOR_TYPES: DoorType[] = ['single-slider', 'bypass', 'barn', 'tub-slider'];
+export function isSlidingDoor(dt?: DoorType): boolean { return !!dt && SLIDING_DOOR_TYPES.includes(dt); }
 
 export type Pt = { x: number; y: number };
 export type Quad = { tl: Pt; tr: Pt; bl: Pt; br: Pt };
@@ -43,10 +46,15 @@ export function formatIn(n: number): string {
 export function defaultOpenings(cfg: EnclosureConfig): Opening[] {
   const defs = STYLE_OPENINGS[cfg.style] || [{ kind: 'panel', label: 'Panel' }];
   const h = cfg.heightIn || 76;
-  return defs.map((d, i) => {
+  const openings: Opening[] = defs.map((d, i) => {
     const w = cfg.widthsIn[i] ?? cfg.widthsIn[cfg.widthsIn.length - 1] ?? 30;
     return { kind: d.kind, label: d.label, widthTop: w, widthBottom: w, heightLeft: h, heightRight: h };
   });
+  // A sliding door type renders the door opening as bypassing panels.
+  if (isSlidingDoor(cfg.doorType)) {
+    return openings.map((o) => (o.kind === 'door' ? { ...o, kind: 'sliding' as OpeningKind, label: o.label === 'Door' ? 'Sliding' : o.label } : o));
+  }
+  return openings;
 }
 
 /** Resolve the working measurement set. Out-of-square mode uses the stored

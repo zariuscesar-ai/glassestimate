@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS } from "@/lib/shower/types";
-import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening } from "@/lib/shower/types";
+import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES } from "@/lib/shower/types";
+import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings } from "@/lib/shower/glass";
+import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 import Link from "next/link";
@@ -121,6 +121,28 @@ function Configurator() {
   // Merge the project-level gaps into an enclosure so the drawing/glass list
   // reflect the current deductions without mutating each row.
   const effCfg = (e: EnclosureConfig): EnclosureConfig => ({ ...e, measure: { outOfSquare: !!e.measure?.outOfSquare, openings: e.measure?.openings || [], deductions } });
+
+  // ---- v2: door type, standard sizes, rough opening ----
+  const doorTypeOf = (e: EnclosureConfig): DoorType => e.doorType || (e.style === "sliding-bypass" ? "bypass" : "hinged");
+  const setDoorType = (id: string, dt: DoorType) => update(id, { doorType: dt });
+  const doorIndex = (style: ShowerStyle) => {
+    const i = (SHOWER_STYLES.find((s) => s.id === style)?.widths || []).findIndex((w) => /door|opening|slid/i.test(w));
+    return i < 0 ? 0 : i;
+  };
+  const applyStdSize = (id: string, size: StandardSize) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id) return e;
+    const di = doorIndex(e.style);
+    const widthsIn = e.widthsIn.map((w, i) => (i === di ? size.widthIn : w));
+    return { ...e, widthsIn, heightIn: size.heightIn, openingWidthIn: size.widthIn, openingHeightIn: size.heightIn + 2 };
+  }));
+  const fitToOpening = (id: string) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id || !e.openingWidthIn) return e;
+    const cur = e.widthsIn.reduce((s, w) => s + w, 0) || 1;
+    const scale = (e.openingWidthIn as number) / cur;
+    const widthsIn = e.widthsIn.map((w) => Math.round(w * scale * 10) / 10);
+    const heightIn = e.openingHeightIn ? Math.max(1, (e.openingHeightIn as number) - 2) : e.heightIn;
+    return { ...e, widthsIn, heightIn };
+  }));
   const toggleOOS = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => {
     if (e.id !== id) return e;
     if (on) { const openings = (e.measure?.openings?.length ? e.measure.openings : defaultOpenings(e)); return { ...e, measure: { outOfSquare: true, openings, deductions } }; }
@@ -205,6 +227,40 @@ function Configurator() {
 
               <div className="p-5 grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Door type</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DOOR_TYPES.map((dt) => (
+                        <button key={dt.id} type="button" onClick={() => setDoorType(e.id, dt.id)}
+                          className={"text-left rounded-lg border px-3 py-2 text-sm " + (doorTypeOf(e) === dt.id ? "border-emerald-500 ring-2 ring-emerald-200 bg-emerald-50" : "border-slate-200 hover:border-slate-300")}>
+                          <div className="font-medium text-slate-800">{dt.name}</div>
+                          <div className="text-[11px] text-slate-500">{dt.blurb}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="block text-[11px] text-slate-500 mb-1">Standard size</span>
+                        <select className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" value=""
+                          onChange={(ev) => { const i = parseInt(ev.target.value); if (!Number.isNaN(i)) applyStdSize(e.id, STANDARD_SIZES[doorTypeOf(e)][i]); }}>
+                          <option value="">Pick a standard size…</option>
+                          {STANDARD_SIZES[doorTypeOf(e)].map((s, i) => <option key={i} value={i}>{s.label}</option>)}
+                        </select>
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <NumberField label="Opening W (wall-to-wall)" value={e.openingWidthIn || 0} onChange={(v) => update(e.id, { openingWidthIn: v })} />
+                        <NumberField label="Opening H (floor–header)" value={e.openingHeightIn || 0} onChange={(v) => update(e.id, { openingHeightIn: v })} />
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <button type="button" onClick={() => fitToOpening(e.id)} disabled={!e.openingWidthIn}
+                        className="text-xs rounded-lg border border-emerald-300 text-emerald-700 px-2.5 py-1 hover:bg-emerald-50 disabled:opacity-50">Fit glass to opening</button>
+                      {(() => { const sug = suggestThickness(effCfg(e)); return sug !== e.thickness
+                        ? <button type="button" onClick={() => update(e.id, { thickness: sug })} className="text-xs rounded-lg border border-amber-300 text-amber-700 px-2.5 py-1 hover:bg-amber-50">Suggested glass: {sug} — apply</button>
+                        : <span className="text-[11px] text-slate-400">Glass {e.thickness} ✓ for this size</span>; })()}
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">Enter the rough opening (wall-to-wall) or pick a standard size; the drawing &amp; glass sizes update below.</p>
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Style</label>
                     <div className="grid grid-cols-2 gap-2">
