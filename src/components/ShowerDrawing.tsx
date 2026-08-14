@@ -3,7 +3,7 @@
 // finish-colored hardware and field dimensions. Pure SVG so it prints crisply.
 
 import type { EnclosureConfig, GlassType, Finish } from '@/lib/shower/types';
-import { layoutEnclosure, formatIn, type Quad, type GlassPanel } from '@/lib/shower/glass';
+import { layoutEnclosure, formatDim, type Quad, type GlassPanel } from '@/lib/shower/glass';
 
 const GLASS_TINT: Record<GlassType, string> = {
   clear: '#cfe6ea', 'low-iron': '#d8ece9', frosted: '#e6ecee', tinted: '#aeb9bf',
@@ -72,17 +72,17 @@ export default function ShowerDrawing({ cfg }: { cfg: EnclosureConfig }) {
               {/* panel label + ordered size */}
               <text x={c.x} y={c.y - fs * 0.3} textAnchor="middle" fontSize={fs} fill="#0f172a" fontWeight={600}>{p.label}</text>
               <text x={c.x} y={c.y + fs * 1.1} textAnchor="middle" fontSize={fs} fill="#0f766e" fontWeight={700}>
-                {p.square ? `${formatIn(p.wTop)} × ${formatIn(p.hLeft)}` : 'out of square'}
+                {p.square ? `${formatDim(p.wTop)} × ${formatDim(p.hLeft)}` : 'out of square'}
               </text>
 
               {/* top width dimension (field) */}
               <text x={(p.openingQuad.tl.x + p.openingQuad.tr.x) / 2} y={-padT * 0.25} textAnchor="middle" fontSize={f} fill="#334155" fontWeight={600}>
-                {formatIn(p.openingQuad.tr.x - p.openingQuad.tl.x)}
+                {formatDim(p.openingQuad.tr.x - p.openingQuad.tl.x)}
               </text>
               {/* bottom width when it differs (out of square) */}
               {Math.abs((p.openingQuad.br.x - p.openingQuad.bl.x) - (p.openingQuad.tr.x - p.openingQuad.tl.x)) > 1 / 16 && (
                 <text x={(p.openingQuad.bl.x + p.openingQuad.br.x) / 2} y={maxH + padB * 0.55} textAnchor="middle" fontSize={f} fill="#b45309" fontWeight={600}>
-                  {formatIn(p.openingQuad.br.x - p.openingQuad.bl.x)}
+                  {formatDim(p.openingQuad.br.x - p.openingQuad.bl.x)}
                 </text>
               )}
             </g>
@@ -97,7 +97,7 @@ export default function ShowerDrawing({ cfg }: { cfg: EnclosureConfig }) {
               <rect x={track.x1} y={-Math.max(1.6, maxH * 0.03)} width={track.x2 - track.x1} height={Math.max(1.4, maxH * 0.022)} rx={0.6} fill={finish} />
               <circle cx={track.x1 + (track.x2 - track.x1) * 0.30} cy={-Math.max(1.6, maxH * 0.03) + Math.max(0.7, maxH * 0.011)} r={Math.max(0.8, maxH * 0.012)} fill="#f8fafc" stroke={finish} strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
               <circle cx={track.x1 + (track.x2 - track.x1) * 0.62} cy={-Math.max(1.6, maxH * 0.03) + Math.max(0.7, maxH * 0.011)} r={Math.max(0.8, maxH * 0.012)} fill="#f8fafc" stroke={finish} strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
-              <text x={(track.x1 + track.x2) / 2} y={-Math.max(1.6, maxH * 0.03) - fs * 0.4} textAnchor="middle" fontSize={fs} fill="#64748b">roller track {formatIn(track.x2 - track.x1)}</text>
+              <text x={(track.x1 + track.x2) / 2} y={-Math.max(1.6, maxH * 0.03) - fs * 0.4} textAnchor="middle" fontSize={fs} fill="#64748b">roller track {formatDim(track.x2 - track.x1)}</text>
             </g>
           ) : (
             <rect x={track.x1} y={0} width={track.x2 - track.x1} height={Math.max(1.0, maxH * 0.016)} rx={0.4} fill={finish} fillOpacity={0.85} />
@@ -106,7 +106,7 @@ export default function ShowerDrawing({ cfg }: { cfg: EnclosureConfig }) {
 
         {/* left height dimension */}
         <text x={-padX * 0.45} y={maxH / 2} textAnchor="middle" fontSize={f} fill="#334155" fontWeight={600} transform={`rotate(-90 ${-padX * 0.45} ${maxH / 2})`}>
-          H {formatIn(panels[0].openingQuad.bl.y)}
+          H {formatDim(panels[0].openingQuad.bl.y)}
         </text>
       </g>
     </svg>

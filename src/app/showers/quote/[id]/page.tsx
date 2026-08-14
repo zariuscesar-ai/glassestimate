@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { SHOWER_STYLES, FINISHES } from "@/lib/shower/types";
+import { SHOWER_STYLES, FINISHES, HANDLE_TYPES, TOWEL_BAR_TYPES } from "@/lib/shower/types";
 import type { EnclosureConfig, RateTable } from "@/lib/shower/types";
 import { priceEnclosure } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, planIsInformative, ponyWallRows, hardwareRows, slidingExtras, type GlassPanel } from "@/lib/shower/glass";
+import { layoutEnclosure, formatDim, panelSizeLabel, planIsInformative, ponyWallRows, hardwareRows, slidingExtras, type GlassPanel } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 
@@ -35,15 +35,19 @@ function describe(c: EnclosureConfig): string {
 function cutoutSummary(c: EnclosureConfig): string {
   const cu = c.cutouts || { handleHoles: 0, hingeCutouts: 0, notches: 0, towelBars: 0 };
   const parts: string[] = [];
+  const handle = HANDLE_TYPES.find((h) => h.id === c.handleType);
+  if (handle) parts.push(handle.name);
+  const towel = TOWEL_BAR_TYPES.find((t) => t.id === c.towelBarType);
+  if (towel && towel.id !== "none") parts.push(towel.name);
   if (cu.hingeCutouts) parts.push(`${cu.hingeCutouts} hinge cutout${cu.hingeCutouts > 1 ? "s" : ""}`);
   if (cu.handleHoles) parts.push(`${cu.handleHoles} handle hole${cu.handleHoles > 1 ? "s" : ""}`);
   if (cu.notches) parts.push(`${cu.notches} notch${cu.notches > 1 ? "es" : ""}`);
-  if (cu.towelBars) parts.push(`${cu.towelBars} towel bar${cu.towelBars > 1 ? "s" : ""}`);
+  if (cu.towelBars && !towel) parts.push(`${cu.towelBars} towel bar${cu.towelBars > 1 ? "s" : ""}`);
   if (c.extraHandles) parts.push(`${c.extraHandles} extra handle${c.extraHandles > 1 ? "s" : ""}`);
   return parts.join(", ");
 }
 
-const panelSize = (p: GlassPanel) => (p.square ? `${formatIn(p.wTop)} × ${formatIn(p.hLeft)}` : panelSizeLabel(p));
+const panelSize = (p: GlassPanel) => (p.square ? `${formatDim(p.wTop)} × ${formatDim(p.hLeft)}` : panelSizeLabel(p));
 
 // Plain-text glass order the dealer or client can email to the fabricator/shop.
 function orderText(est: Est, company: Company | null): string {

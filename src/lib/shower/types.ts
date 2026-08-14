@@ -65,6 +65,8 @@ export interface EnclosureConfig {
   sizeFromOpening?: boolean;   // size the glass from the opening (vs panel-first)
   ponyWall?: PonyWall;         // knee-wall + 90° return + notched panel
   hardware?: HardwareLayout;   // adjustable hole / hinge / clamp positions
+  handleType?: string;         // HANDLE_TYPES id (pull / knob / combo)
+  towelBarType?: string;       // TOWEL_BAR_TYPES id
 }
 
 // ---- Shop drawing / accurate glass sizing (additive, optional) ----
@@ -268,6 +270,37 @@ export const HW_STD = {
   handleFromLatchEdgeIn: 2.5, // handle center this far in from the latch/strike edge
   holeDiaIn: 0.5,             // standard back-to-back knob hole diameter
 };
+
+// ---- Popular standard sizes for the size dropdowns (inches) ----
+// Widths and heights offered as quick picks; "Custom" always lets the dealer
+// type an exact fractional cut (e.g. 79 1/4"). Additive.
+export const POPULAR_DOOR_WIDTHS = [22, 24, 26, 28, 30, 32, 34, 36];
+export const POPULAR_DOOR_HEIGHTS = [72, 74, 76, 78, 80];
+
+// ---- Handles & towel bars (popular configurations) ----
+// A brand-neutral catalog of the pull/knob and towel-bar options shops fit most.
+// ctcIn is the mounting center-to-center (0 for a single knob); a combo carries
+// both a pull CTC and a towel-bar length. Additive: selection is optional.
+export interface HandleOption { id: string; name: string; ctcIn: number; blurb: string; }
+export const HANDLE_TYPES: HandleOption[] = [
+  { id: 'knob', name: 'Single knob', ctcIn: 0, blurb: 'One back-mounted knob' },
+  { id: 'btb-knob', name: 'Back-to-back knobs', ctcIn: 0, blurb: 'Knob both sides' },
+  { id: 'pull-6', name: 'Back-to-back pull 6"', ctcIn: 6, blurb: '6" center-to-center pull' },
+  { id: 'pull-8', name: 'Back-to-back pull 8"', ctcIn: 8, blurb: '8" center-to-center pull' },
+  { id: 'pull-12', name: 'Back-to-back pull 12"', ctcIn: 12, blurb: '12" center-to-center pull' },
+  { id: 'ladder-18', name: 'Ladder pull 18"', ctcIn: 18, blurb: '18" ladder / bar pull' },
+  { id: 'ladder-24', name: 'Ladder pull 24"', ctcIn: 24, blurb: '24" ladder / bar pull' },
+  { id: 'combo-18', name: 'Towel-bar + knob combo (18")', ctcIn: 0, blurb: '18" towel bar w/ knob, outside face' },
+  { id: 'combo-24', name: 'Towel-bar + knob combo (24")', ctcIn: 0, blurb: '24" towel bar w/ knob, outside face' },
+];
+
+export interface TowelBarOption { id: string; name: string; lengthIn: number; }
+export const TOWEL_BAR_TYPES: TowelBarOption[] = [
+  { id: 'none', name: 'None', lengthIn: 0 },
+  { id: 'tb-18', name: 'Towel bar 18"', lengthIn: 18 },
+  { id: 'tb-24', name: 'Towel bar 24"', lengthIn: 24 },
+  { id: 'tb-30', name: 'Towel bar 30"', lengthIn: 30 },
+];
 
 export interface RateTable {
   glassPerSqft: Record<GlassThickness, Record<GlassType, number>>;

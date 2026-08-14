@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL, POPULAR_MODELS, DEFAULT_HARDWARE } from "@/lib/shower/types";
+import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL, POPULAR_MODELS, DEFAULT_HARDWARE, POPULAR_DOOR_WIDTHS, POPULAR_DOOR_HEIGHTS, HANDLE_TYPES, TOWEL_BAR_TYPES } from "@/lib/shower/types";
 import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize, PonyWall, PopularModel, HardwareLayout, HardwarePlacement } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatIn, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows, slidingExtras } from "@/lib/shower/glass";
+import { layoutEnclosure, formatDim, parseInches, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows, slidingExtras } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 import Link from "next/link";
@@ -143,6 +143,27 @@ function Configurator() {
     const heightIn = e.openingHeightIn ? Math.max(1, (e.openingHeightIn as number) - 2) : e.heightIn;
     return { ...e, widthsIn, heightIn };
   }));
+  // Popular width / height quick picks (door lite width + overall height).
+  const setDoorWidth = (id: string, w: number) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id) return e;
+    const di = doorIndex(e.style);
+    const widthsIn = e.widthsIn.map((x, i) => (i === di ? w : x));
+    return { ...e, widthsIn, openingWidthIn: w };
+  }));
+  const setDoorHeight = (id: string, h: number) => update(id, { heightIn: h, openingHeightIn: h + 2 });
+  // Handle & towel-bar configuration (popular sets). Selecting a pull with a
+  // center-to-center also syncs the hardware layout's handle CTC.
+  const setHandleType = (id: string, hid: string) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id) return e;
+    const opt = HANDLE_TYPES.find((h) => h.id === hid);
+    const hardware = e.hardware && opt && opt.ctcIn > 0 ? { ...e.hardware, handleCtcIn: opt.ctcIn } : e.hardware;
+    return { ...e, handleType: hid, hardware };
+  }));
+  const setTowelBar = (id: string, tid: string) => setEnclosures((l) => l.map((e) => {
+    if (e.id !== id) return e;
+    const bars = tid === "none" ? 0 : Math.max(1, e.cutouts.towelBars || 0);
+    return { ...e, towelBarType: tid, cutouts: { ...e.cutouts, towelBars: bars } };
+  }));
   const togglePony = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, ponyWall: on ? { ...DEFAULT_PONY_WALL, panelHeightIn: e.heightIn } : undefined } : e)));
   const setPony = (id: string, patch: Partial<PonyWall>) => setEnclosures((l) => l.map((e) => (e.id === id && e.ponyWall ? { ...e, ponyWall: { ...e.ponyWall, ...patch } } : e)));
 
@@ -222,14 +243,14 @@ function Configurator() {
         {showGaps && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-              <NumberField label="Door hinge gap" value={deductions.doorHingeGap} onChange={(v) => setDeductions((d) => ({ ...d, doorHingeGap: v }))} step />
-              <NumberField label="Door strike gap" value={deductions.doorStrikeGap} onChange={(v) => setDeductions((d) => ({ ...d, doorStrikeGap: v }))} step />
-              <NumberField label="Door top gap" value={deductions.doorTopGap} onChange={(v) => setDeductions((d) => ({ ...d, doorTopGap: v }))} step />
-              <NumberField label="Door bottom gap" value={deductions.doorBottomGap} onChange={(v) => setDeductions((d) => ({ ...d, doorBottomGap: v }))} step />
-              <NumberField label="Panel side gap" value={deductions.panelSideGap} onChange={(v) => setDeductions((d) => ({ ...d, panelSideGap: v }))} step />
-              <NumberField label="Panel top gap" value={deductions.panelTopGap} onChange={(v) => setDeductions((d) => ({ ...d, panelTopGap: v }))} step />
-              <NumberField label="Panel bottom gap" value={deductions.panelBottomGap} onChange={(v) => setDeductions((d) => ({ ...d, panelBottomGap: v }))} step />
-              <NumberField label="Sliding overlap" value={deductions.slidingOverlap} onChange={(v) => setDeductions((d) => ({ ...d, slidingOverlap: v }))} step />
+              <FractionField label="Door hinge gap" value={deductions.doorHingeGap} onChange={(v) => setDeductions((d) => ({ ...d, doorHingeGap: v }))} step />
+              <FractionField label="Door strike gap" value={deductions.doorStrikeGap} onChange={(v) => setDeductions((d) => ({ ...d, doorStrikeGap: v }))} step />
+              <FractionField label="Door top gap" value={deductions.doorTopGap} onChange={(v) => setDeductions((d) => ({ ...d, doorTopGap: v }))} step />
+              <FractionField label="Door bottom gap" value={deductions.doorBottomGap} onChange={(v) => setDeductions((d) => ({ ...d, doorBottomGap: v }))} step />
+              <FractionField label="Panel side gap" value={deductions.panelSideGap} onChange={(v) => setDeductions((d) => ({ ...d, panelSideGap: v }))} step />
+              <FractionField label="Panel top gap" value={deductions.panelTopGap} onChange={(v) => setDeductions((d) => ({ ...d, panelTopGap: v }))} step />
+              <FractionField label="Panel bottom gap" value={deductions.panelBottomGap} onChange={(v) => setDeductions((d) => ({ ...d, panelBottomGap: v }))} step />
+              <FractionField label="Sliding overlap" value={deductions.slidingOverlap} onChange={(v) => setDeductions((d) => ({ ...d, slidingOverlap: v }))} step />
             </div>
             <p className="text-[11px] text-slate-400 mt-2">Gaps subtracted from field openings to get ordered glass sizes (inches). Applies to every enclosure and saves with the estimate.</p>
           </>
@@ -278,19 +299,37 @@ function Configurator() {
                         </button>
                       ))}
                     </div>
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <label className="block">
-                        <span className="block text-[11px] text-slate-500 mb-1">Standard size</span>
+                        <span className="block text-[11px] text-slate-500 mb-1">Standard size (W × H)</span>
                         <select className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" value=""
                           onChange={(ev) => { const i = parseInt(ev.target.value); if (!Number.isNaN(i)) applyStdSize(e.id, STANDARD_SIZES[doorTypeOf(e)][i]); }}>
                           <option value="">Pick a standard size…</option>
                           {STANDARD_SIZES[doorTypeOf(e)].map((s, i) => <option key={i} value={i}>{s.label}</option>)}
                         </select>
                       </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <NumberField label="Opening W (wall-to-wall)" value={e.openingWidthIn || 0} onChange={(v) => update(e.id, { openingWidthIn: v })} />
-                        <NumberField label="Opening H (floor–header)" value={e.openingHeightIn || 0} onChange={(v) => update(e.id, { openingHeightIn: v })} />
-                      </div>
+                      <label className="block">
+                        <span className="block text-[11px] text-slate-500 mb-1">Door width</span>
+                        <select className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                          value={POPULAR_DOOR_WIDTHS.includes(e.widthsIn[doorIndex(e.style)] ?? -1) ? String(e.widthsIn[doorIndex(e.style)]) : "custom"}
+                          onChange={(ev) => { if (ev.target.value !== "custom") setDoorWidth(e.id, parseFloat(ev.target.value)); }}>
+                          {POPULAR_DOOR_WIDTHS.map((w) => <option key={w} value={w}>{w}&quot;</option>)}
+                          <option value="custom">Custom…</option>
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="block text-[11px] text-slate-500 mb-1">Height</span>
+                        <select className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                          value={POPULAR_DOOR_HEIGHTS.includes(e.heightIn) ? String(e.heightIn) : "custom"}
+                          onChange={(ev) => { if (ev.target.value !== "custom") setDoorHeight(e.id, parseFloat(ev.target.value)); }}>
+                          {POPULAR_DOOR_HEIGHTS.map((h) => <option key={h} value={h}>{h}&quot;</option>)}
+                          <option value="custom">Custom…</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <FractionField label="Opening W (wall-to-wall)" value={e.openingWidthIn || 0} onChange={(v) => update(e.id, { openingWidthIn: v })} />
+                      <FractionField label="Opening H (floor–header)" value={e.openingHeightIn || 0} onChange={(v) => update(e.id, { openingHeightIn: v })} />
                     </div>
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       <button type="button" onClick={() => fitToOpening(e.id)} disabled={!e.openingWidthIn}
@@ -318,11 +357,11 @@ function Configurator() {
                     <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Dimensions (inches)</label>
                     <div className="grid grid-cols-2 gap-2">
                       {style.widths.map((wl, i) => (
-                        <NumberField key={i} label={wl} value={e.widthsIn[i] ?? 0} onChange={(v) => setWidth(e.id, i, v)} />
+                        <FractionField key={i} label={wl} value={e.widthsIn[i] ?? 0} onChange={(v) => setWidth(e.id, i, v)} />
                       ))}
-                      <NumberField label="Height" value={e.heightIn} onChange={(v) => update(e.id, { heightIn: v })} />
+                      <FractionField label="Height" value={e.heightIn} onChange={(v) => update(e.id, { heightIn: v })} />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">Glass area: <b>{est?.sqft ?? 0} sq ft</b></p>
+                    <p className="text-xs text-slate-400 mt-1">Glass area: <b>{est?.sqft ?? 0} sq ft</b> &middot; type any custom cut, e.g. <span className="font-medium text-slate-500">79 1/4&quot;</span></p>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
@@ -334,8 +373,9 @@ function Configurator() {
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Hardware &amp; cutouts</label>
                     <div className="grid grid-cols-2 gap-2">
+                      <SelectField label="Handle / pull" value={e.handleType || "pull-6"} onChange={(v) => setHandleType(e.id, v)} options={HANDLE_TYPES.map((h) => ({ value: h.id, label: h.name }))} />
+                      <SelectField label="Towel bar" value={e.towelBarType || "none"} onChange={(v) => setTowelBar(e.id, v)} options={TOWEL_BAR_TYPES.map((t) => ({ value: t.id, label: t.name }))} />
                       <NumberField label="Extra handles" value={e.extraHandles} onChange={(v) => update(e.id, { extraHandles: Math.max(0, v) })} />
-                      <NumberField label="Towel bars" value={e.cutouts.towelBars} onChange={(v) => setCut(e.id, "towelBars", v)} />
                       <NumberField label="Handle / accessory holes" value={e.cutouts.handleHoles} onChange={(v) => setCut(e.id, "handleHoles", v)} />
                       <NumberField label="Hinge cutouts" value={e.cutouts.hingeCutouts} onChange={(v) => setCut(e.id, "hingeCutouts", v)} />
                       <NumberField label="Corner / knee-wall notches" value={e.cutouts.notches} onChange={(v) => setCut(e.id, "notches", v)} />
@@ -350,8 +390,8 @@ function Configurator() {
                     {e.hardware?.enabled && (
                       <div className="rounded-lg border border-slate-200 p-3 space-y-3">
                         <div className="grid grid-cols-3 gap-2">
-                          <NumberField label="Handle CTC" value={e.hardware.handleCtcIn} onChange={(v) => setHardware(e.id, { handleCtcIn: v })} step />
-                          <NumberField label="Handle height (floor)" value={e.hardware.handleHeightIn} onChange={(v) => setHardware(e.id, { handleHeightIn: v })} />
+                          <FractionField label="Handle CTC" value={e.hardware.handleCtcIn} onChange={(v) => setHardware(e.id, { handleCtcIn: v })} step />
+                          <FractionField label="Handle height (floor)" value={e.hardware.handleHeightIn} onChange={(v) => setHardware(e.id, { handleHeightIn: v })} />
                           <NumberField label="Clamps / panel" value={e.hardware.clampsPerJoint} onChange={(v) => setHardware(e.id, { clampsPerJoint: Math.max(2, Math.min(3, Math.round(v))) })} />
                         </div>
                         <label className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -365,7 +405,7 @@ function Configurator() {
                                 {resolveHardware(effCfg(e)).map((h, hi) => (
                                   <div key={hi} className="flex items-center justify-between gap-2">
                                     <span className="text-slate-600 whitespace-nowrap">{h.label}</span>
-                                    <span className="text-slate-400 whitespace-nowrap">{formatIn(h.fromTopIn)} top · {formatIn(h.fromEdgeIn)} edge</span>
+                                    <span className="text-slate-400 whitespace-nowrap">{formatDim(h.fromTopIn)} top · {formatDim(h.fromEdgeIn)} edge</span>
                                   </div>
                                 ))}
                               </div>
@@ -400,18 +440,18 @@ function Configurator() {
                     {e.ponyWall && (
                       <div className="rounded-lg border border-slate-200 p-3 space-y-2">
                         <div className="grid grid-cols-3 gap-2 items-end">
-                          <NumberField label="Knee wall H" value={e.ponyWall.heightIn} onChange={(v) => setPony(e.id, { heightIn: v })} />
+                          <FractionField label="Knee wall H" value={e.ponyWall.heightIn} onChange={(v) => setPony(e.id, { heightIn: v })} />
                           <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2"><input type="checkbox" checked={e.ponyWall.hasReturn} onChange={(ev) => setPony(e.id, { hasReturn: ev.target.checked })} className="accent-emerald-600" />90° return</label>
-                          {e.ponyWall.hasReturn ? <NumberField label="Return W" value={e.ponyWall.returnWidthIn} onChange={(v) => setPony(e.id, { returnWidthIn: v })} /> : <div />}
+                          {e.ponyWall.hasReturn ? <FractionField label="Return W" value={e.ponyWall.returnWidthIn} onChange={(v) => setPony(e.id, { returnWidthIn: v })} /> : <div />}
                         </div>
                         <label className="flex items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={e.ponyWall.notched} onChange={(ev) => setPony(e.id, { notched: ev.target.checked })} className="accent-emerald-600" />Notched panel (custom cut)</label>
                         {e.ponyWall.notched && (
                           <div className="flex gap-3 items-center">
                             <div className="grid grid-cols-2 gap-2 flex-1">
-                              <NumberField label="Panel W" value={e.ponyWall.panelWidthIn ?? 24} onChange={(v) => setPony(e.id, { panelWidthIn: v })} />
-                              <NumberField label="Panel H" value={e.ponyWall.panelHeightIn ?? e.heightIn} onChange={(v) => setPony(e.id, { panelHeightIn: v })} />
-                              <NumberField label="Notch W" value={e.ponyWall.notchWidthIn} onChange={(v) => setPony(e.id, { notchWidthIn: v })} />
-                              <NumberField label="Notch H" value={e.ponyWall.notchHeightIn} onChange={(v) => setPony(e.id, { notchHeightIn: v })} />
+                              <FractionField label="Panel W" value={e.ponyWall.panelWidthIn ?? 24} onChange={(v) => setPony(e.id, { panelWidthIn: v })} />
+                              <FractionField label="Panel H" value={e.ponyWall.panelHeightIn ?? e.heightIn} onChange={(v) => setPony(e.id, { panelHeightIn: v })} />
+                              <FractionField label="Notch W" value={e.ponyWall.notchWidthIn} onChange={(v) => setPony(e.id, { notchWidthIn: v })} />
+                              <FractionField label="Notch H" value={e.ponyWall.notchHeightIn} onChange={(v) => setPony(e.id, { notchHeightIn: v })} />
                             </div>
                             <NotchedPanel pw={e.ponyWall} />
                           </div>
@@ -464,7 +504,7 @@ function Configurator() {
                         {draw.panels.map((p, pi) => (
                           <tr key={pi} className="border-t border-slate-100 align-top">
                             <td className="py-1.5 pr-3 text-slate-700 whitespace-nowrap">{p.label}</td>
-                            <td className="py-1.5 font-medium text-slate-900">{p.square ? (formatIn(p.wTop) + " × " + formatIn(p.hLeft)) : panelSizeLabel(p)}</td>
+                            <td className="py-1.5 font-medium text-slate-900">{p.square ? (formatDim(p.wTop) + " × " + formatDim(p.hLeft)) : panelSizeLabel(p)}</td>
                           </tr>
                         ))}
                         {slidingExtras(eff).map((r, ri) => (
@@ -497,10 +537,10 @@ function Configurator() {
                       {e.measure.openings.map((o, oi) => (
                         <div key={oi} className="grid grid-cols-5 gap-2 items-end">
                           <div className="text-xs text-slate-600 pb-1.5">{o.label}</div>
-                          <NumberField label="W top" value={o.widthTop} onChange={(v) => setOpening(e.id, oi, { widthTop: v })} step />
-                          <NumberField label="W bottom" value={o.widthBottom} onChange={(v) => setOpening(e.id, oi, { widthBottom: v })} step />
-                          <NumberField label="H left" value={o.heightLeft} onChange={(v) => setOpening(e.id, oi, { heightLeft: v })} step />
-                          <NumberField label="H right" value={o.heightRight} onChange={(v) => setOpening(e.id, oi, { heightRight: v })} step />
+                          <FractionField label="W top" value={o.widthTop} onChange={(v) => setOpening(e.id, oi, { widthTop: v })} step />
+                          <FractionField label="W bottom" value={o.widthBottom} onChange={(v) => setOpening(e.id, oi, { widthBottom: v })} step />
+                          <FractionField label="H left" value={o.heightLeft} onChange={(v) => setOpening(e.id, oi, { heightLeft: v })} step />
+                          <FractionField label="H right" value={o.heightRight} onChange={(v) => setOpening(e.id, oi, { heightRight: v })} step />
                         </div>
                       ))}
                     </div>
@@ -596,6 +636,24 @@ function NumberField({ label, value, onChange, step }: { label: string; value: n
       <span className="block text-[11px] text-slate-500 mb-1">{label}</span>
       <input type="number" min={0} step={step ? 0.0625 : undefined} value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+    </label>
+  );
+}
+
+// Fraction-aware dimension field: dealers can type an exact custom cut like
+// "79 1/4"", "80 1/2"", "1/2"" or a plain decimal. Shows the shop fraction when
+// not being edited; parses live and keeps the last good value while typing.
+// `step` is accepted for call-site compatibility with NumberField but unused.
+function FractionField({ label, value, onChange, step: _step }: { label: string; value: number; onChange: (v: number) => void; step?: boolean }) {
+  const [text, setText] = useState<string | null>(null);
+  const display = text !== null ? text : (Number.isFinite(value) && value > 0 ? formatDim(value) : "");
+  return (
+    <label className="block">
+      <span className="block text-[11px] text-slate-500 mb-1">{label}</span>
+      <input type="text" inputMode="text" value={display} placeholder={"e.g. 30 or 79 1/4\""}
+        onChange={(ev) => { setText(ev.target.value); const v = parseInches(ev.target.value); if (v !== null) onChange(v); }}
+        onBlur={() => { const v = parseInches(text ?? ""); if (v !== null) onChange(v); setText(null); }}
         className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
     </label>
   );

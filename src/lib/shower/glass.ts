@@ -55,6 +55,46 @@ export function formatIn(n: number): string {
   return num ? `${whole} ${num}/${den}"` : `${whole}"`;
 }
 
+/**
+ * Parse a shop-typed dimension into decimal inches. Accepts whole numbers,
+ * decimals, and fractions in the forms dealers actually type:
+ *   `79 1/4`  `79-1/4`  `79 1/4"`  `79.25`  `1/2`  `80 1/2"`  `79"`
+ * Returns null when the text isn't a usable number (so callers can keep the
+ * previous value while the user is mid-edit). Not rounded — exact custom cuts
+ * (e.g. 79 1/4 = 79.25) are preserved.
+ */
+export function parseInches(raw: string): number | null {
+  if (raw == null) return null;
+  let s = String(raw).trim().replace(/["″”]/g, '').replace(/\s+/g, ' ').trim();
+  if (s === '') return null;
+  // whole + fraction, e.g. "79 1/4" or "79-1/4"
+  let m = s.match(/^(\d+(?:\.\d+)?)[ -](\d+)\/(\d+)$/);
+  if (m) { const d = parseFloat(m[3]); if (!d) return null; return parseFloat(m[1]) + parseFloat(m[2]) / d; }
+  // bare fraction, e.g. "1/2"
+  m = s.match(/^(\d+)\/(\d+)$/);
+  if (m) { const d = parseFloat(m[2]); if (!d) return null; return parseFloat(m[1]) / d; }
+  // plain number / decimal
+  m = s.match(/^\d*\.?\d+$/);
+  if (m) return parseFloat(s);
+  return null;
+}
+
+// Round to 1/1000" — tames float noise while preserving any decimal of an inch
+// the dealer enters (e.g. 79.35"), instead of snapping everything to 1/16.
+export const r1000 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * Format a size for order sheets / labels. If it lands cleanly on the 1/16"
+ * grid, show the shop fraction (79 1/4"); otherwise show the exact decimal
+ * (79.35") so no fraction of an inch is lost — for every glass type & config.
+ */
+export function formatDim(n: number): string {
+  const v = Math.max(0, n);
+  const sixteenth = Math.round(v * 16) / 16;
+  if (Math.abs(v - sixteenth) < 1e-4) return formatIn(v);
+  return `${r1000(v)}"`;
+}
+
 /** Square openings derived from the simple width/height fields (no out-of-square). */
 export function defaultOpenings(cfg: EnclosureConfig): Opening[] {
   const defs = STYLE_OPENINGS[cfg.style] || [{ kind: 'panel', label: 'Panel' }];
@@ -105,13 +145,13 @@ export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; t
 
     if (o.kind === 'sliding') {
       const overlap = deductions.slidingOverlap;
-      const gh = round16(o.heightLeft - deductions.panelTopGap - deductions.panelBottomGap);
+      const gh = r1000(o.heightLeft - deductions.panelTopGap - deductions.panelBottomGap);
       const top = deductions.panelTopGap, bot = o.heightLeft - deductions.panelBottomGap;
       const mk = (x0: number, w: number, label: string, role: 'fixed' | 'sliding'): GlassPanel => ({
         label, kind: 'sliding', wTop: w, wBottom: w, hLeft: gh, hRight: gh, square: true, role,
         openingQuad, glassQuad: { tl: { x: x0, y: top }, tr: { x: x0 + w, y: top }, bl: { x: x0, y: bot }, br: { x: x0 + w, y: bot } },
       });
-      const halfW = round16((o.widthTop + overlap) / 2);
+      const halfW = r1000((o.widthTop + overlap) / 2);
       if (fam === 'single-slider') {
         // One fixed lite + one bypassing slider (equal panels).
         panels.push(mk(x, halfW, 'Fixed panel', 'fixed'));
@@ -120,8 +160,8 @@ export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; t
       } else if (fam === 'barn') {
         // Fixed lite covers half; a barn door slides across an exposed track that
         // extends past the opening so the door parks clear of the entry.
-        const fixedW = round16(o.widthTop / 2);
-        const doorW = round16(o.widthTop / 2 + overlap);
+        const fixedW = r1000(o.widthTop / 2);
+        const doorW = r1000(o.widthTop / 2 + overlap);
         panels.push(mk(x, fixedW, 'Fixed panel', 'fixed'));
         panels.push(mk(x + o.widthTop - doorW, doorW, 'Barn door (sliding)', 'sliding'));
         track = { x1: x, x2: x + o.widthTop + fixedW, y: 0, exposed: true };
@@ -137,10 +177,10 @@ export function layoutEnclosure(cfg: EnclosureConfig): { panels: GlassPanel[]; t
       }
     } else {
       const ins = insets(o.kind, deductions);
-      const wTop = round16(o.widthTop - ins.left - ins.right);
-      const wBottom = round16(o.widthBottom - ins.left - ins.right);
-      const hLeft = round16(o.heightLeft - ins.top - ins.bottom);
-      const hRight = round16(o.heightRight - ins.top - ins.bottom);
+      const wTop = r1000(o.widthTop - ins.left - ins.right);
+      const wBottom = r1000(o.widthBottom - ins.left - ins.right);
+      const hLeft = r1000(o.heightLeft - ins.top - ins.bottom);
+      const hRight = r1000(o.heightRight - ins.top - ins.bottom);
       const gq: Quad = {
         tl: { x: x + ins.left, y: ins.top },
         tr: { x: x + o.widthTop - ins.right, y: ins.top },
@@ -184,12 +224,12 @@ export function ponyWallRows(cfg: EnclosureConfig): { label: string; size: strin
   const encH = cfg.heightIn || 76;
   const rows: { label: string; size: string }[] = [];
   if (pw.hasReturn) {
-    const h = round16(Math.max(1, encH - pw.heightIn));
-    rows.push({ label: '90° return (on pony wall)', size: `${formatIn(pw.returnWidthIn)} × ${formatIn(h)}` });
+    const h = r1000(Math.max(1, encH - pw.heightIn));
+    rows.push({ label: '90° return (on pony wall)', size: `${formatDim(pw.returnWidthIn)} × ${formatDim(h)}` });
   }
   if (pw.notched) {
     const w = pw.panelWidthIn ?? 24, h = pw.panelHeightIn ?? encH;
-    rows.push({ label: 'Notched panel (custom cut)', size: `${formatIn(w)} × ${formatIn(h)} — notch ${formatIn(pw.notchWidthIn)} × ${formatIn(pw.notchHeightIn)}` });
+    rows.push({ label: 'Notched panel (custom cut)', size: `${formatDim(w)} × ${formatDim(h)} — notch ${formatDim(pw.notchWidthIn)} × ${formatDim(pw.notchHeightIn)}` });
   }
   return rows;
 }
@@ -240,7 +280,7 @@ export function resolveHardware(cfg: EnclosureConfig): HardwarePlacement[] {
 export function hardwareRows(cfg: EnclosureConfig): { label: string; size: string }[] {
   return resolveHardware(cfg).map((h) => ({
     label: h.label,
-    size: `${formatIn(h.fromTopIn)} from top · ${formatIn(h.fromEdgeIn)} from edge${h.diaIn ? ` · ⌀ ${formatIn(h.diaIn)}` : ''}`,
+    size: `${formatDim(h.fromTopIn)} from top · ${formatDim(h.fromEdgeIn)} from edge${h.diaIn ? ` · ⌀ ${formatDim(h.diaIn)}` : ''}`,
   }));
 }
 
@@ -285,6 +325,6 @@ export function planIsInformative(cfg: EnclosureConfig): boolean {
 
 /** A concise ordered-size string for a panel (single W x H, or 4 edges if out of square). */
 export function panelSizeLabel(p: GlassPanel): string {
-  if (p.square) return `${formatIn(p.wTop)} x ${formatIn(p.hLeft)}`;
-  return `top ${formatIn(p.wTop)} / bot ${formatIn(p.wBottom)} x L ${formatIn(p.hLeft)} / R ${formatIn(p.hRight)}`;
+  if (p.square) return `${formatDim(p.wTop)} x ${formatDim(p.hLeft)}`;
+  return `top ${formatDim(p.wTop)} / bot ${formatDim(p.wBottom)} x L ${formatDim(p.hLeft)} / R ${formatDim(p.hRight)}`;
 }
