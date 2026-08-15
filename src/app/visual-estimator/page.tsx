@@ -404,6 +404,10 @@ export default function VisualEstimatorPage() {
   // Enter draw/edit mode WITHOUT wiping the current shape (so corners can be
   // adjusted). Only starts empty when there is nothing drawn yet.
   const editShape = () => { setView('plan'); setDrawMode(true); };
+  // Sketch flow: pick a glass system that applies to every wall you've drawn.
+  const applySystemAll = (system: string) => setRuns(rs => (rs.length ? rs.map(r => ({ ...r, system })) : [newRun(system)]));
+  // One-click: finish the sketch and jump straight to the realistic elevation render.
+  const convertToRender = () => { setDrawMode(false); setSel(0); setView('elev'); };
   const undoPoint = () => setPts(ps => ps.slice(0, -1));
   const deleteShape = () => { setPts([]); setRuns([]); setSel(0); setDrawMode(true); setView('plan'); setHoverFt(null); try { window.localStorage.removeItem('glassestimate:ve:v1'); } catch { /* ignore */ } };
   const saveShape = () => {
@@ -487,7 +491,18 @@ export default function VisualEstimatorPage() {
               <button onClick={() => applyPreset('C')} className={seg(false)}>⊐ C / U enclosure</button>
               <button onClick={editShape} className={seg(drawMode)}>✎ Draw / Edit</button>
             </div>
-            {drawMode && <p className="text-[11px] text-amber-600 mt-2">Tap to add corners · <b>drag a corner</b> to adjust · tap the <span className="text-emerald-600 font-semibold">green</span> first corner to close the shape. Each segment&apos;s length shows on the line.</p>}
+            {drawMode && (
+              <div className="mt-2 space-y-2">
+                <p className="text-[11px] text-amber-600"><b>1.</b> Tap corners to sketch the walls · drag to adjust · lengths show on each line.</p>
+                <div>
+                  <label className="text-[11px] text-slate-500"><b>2.</b> Pick a glass system (applies to all walls)</label>
+                  <select className="input text-sm mt-1" value={runs[0]?.system || 'storefront'} onChange={e => applySystemAll(e.target.value)}>
+                    {Object.entries(SYSTEMS).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
+                  </select>
+                </div>
+                <button onClick={convertToRender} disabled={pts.length < 2} className="btn-primary btn-sm w-full disabled:opacity-50">✨ 3. Convert to render</button>
+              </div>
+            )}
           </div>
 
           <div className="card p-3">
@@ -555,6 +570,7 @@ export default function VisualEstimatorPage() {
             <label className="btn-secondary btn-sm cursor-pointer text-center"><input type="file" accept="image/*" onChange={onPhoto} className="hidden" />📷 Site photo</label>
             {photo && view === 'photo' && <button onClick={() => { setCorners(null); setPlacing(true); setTmp([]); }} className="btn-secondary btn-sm">📐 Re-place</button>}
             {drawMode && <button onClick={undoPoint} disabled={pts.length === 0} className="btn-secondary btn-sm disabled:opacity-50">↶ Undo point</button>}
+            {drawMode && <button onClick={convertToRender} disabled={pts.length < 2} className="btn-primary btn-sm disabled:opacity-50">✨ Convert to render</button>}
             {drawMode && <button onClick={() => setDrawMode(false)} disabled={pts.length < 2} className="btn-secondary btn-sm disabled:opacity-50">✓ Finish shape</button>}
             <button onClick={saveShape} disabled={pts.length < 2} className="btn-secondary btn-sm disabled:opacity-50">💾 Save</button>
             <button onClick={deleteShape} className="btn-secondary btn-sm text-red-600">🗑 Delete</button>
