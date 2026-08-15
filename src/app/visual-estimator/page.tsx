@@ -162,7 +162,7 @@ function getPlanT(pts: Pt[], cw: number, ch: number, draw: boolean): PlanT {
   return draw ? fixedTransform(cw, ch) : planTransform(pts, cw, ch);
 }
 
-function drawPlan(ctx: CanvasRenderingContext2D, cw: number, ch: number, pts: Pt[], runs: Run[], sel: number, title: string, t: PlanT, draw: boolean) {
+function drawPlan(ctx: CanvasRenderingContext2D, cw: number, ch: number, pts: Pt[], runs: Run[], sel: number, title: string, t: PlanT, draw: boolean, preview: Pt | null = null) {
   ctx.fillStyle = '#0e1828'; ctx.fillRect(0, 0, cw, ch);
   if (draw) {
     // Graph-paper grid locked to the drawing scale: 1 square = 1 ft, brighter every 5 ft.
@@ -217,7 +217,24 @@ function drawPlan(ctx: CanvasRenderingContext2D, cw: number, ch: number, pts: Pt
     ctx.fillStyle = '#e8eefb'; ctx.font = '600 12px -apple-system,sans-serif'; ctx.textAlign = 'center'; ctx.fillText(fmtFt(runFt), mx, my); ctx.textAlign = 'start';
     if (sel === i) { ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(a.x - nx * 10, a.y - ny * 10); ctx.lineTo(b.x - nx * 10, b.y - ny * 10); ctx.stroke(); ctx.setLineDash([]); }
   }
-  for (const p of pts) { const q = t.toPx(p); ctx.fillStyle = '#0e1828'; ctx.strokeStyle = '#93a4c2'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, 7); ctx.fill(); ctx.stroke(); }
+  // Live preview of the segment being drawn: dashed line from the last corner to
+  // the cursor, with its live length — so each new line's measurement is visible.
+  if (draw && preview && pts.length >= 1) {
+    const a = t.toPx(pts[pts.length - 1]), b = t.toPx(preview);
+    ctx.strokeStyle = 'rgba(37,99,235,0.75)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+    const L = dist(pts[pts.length - 1], preview);
+    ctx.fillStyle = '#93c5fd'; ctx.font = '600 12px -apple-system,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(fmtFt(L), (a.x + b.x) / 2, (a.y + b.y) / 2 - 8); ctx.textAlign = 'start';
+  }
+  // Corners. In draw/edit mode they are larger grab targets; the first corner turns
+  // green once there are 3+ points to signal "tap here to close the shape".
+  pts.forEach((p, i) => {
+    const q = t.toPx(p); const canClose = draw && i === 0 && pts.length >= 3;
+    ctx.fillStyle = draw ? (canClose ? '#10b981' : '#2563eb') : '#0e1828';
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(q.x, q.y, draw ? 7 : 5, 0, 7); ctx.fill(); ctx.stroke();
+  });
   const used = Array.from(new Set(runs.map(r => r.system)));
   const ly = ch - 14 - used.length * 16;
   ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(14, ly - 16, 152, used.length * 16 + 22);
@@ -265,8 +282,24 @@ export default function VisualEstimatorPage() {
   const [laborPsf, setLaborPsf] = useState(14);
   const [taxPct, setTaxPct] = useState(8.25);
   const [saving, setSaving] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [hoverFt, setHoverFt] = useState<Pt | null>(null);
+  const [savedMsg, setSavedMsg] = useState('');
 
   useEffect(() => { fetch('/api/clients').then(r => r.json()).then(d => { if (Array.isArray(d)) setClients(d); }).catch(() => {}); }, []);
+
+  // Restore the last saved shape (kept on this device) so work isn't lost on reload.
+  useEffect(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('glassestimate:ve:v1') : null;
+      if (!raw) return; const d = JSON.parse(raw);
+      if (Array.isArray(d.pts) && d.pts.length >= 2) {
+        setPts(d.pts); if (Array.isArray(d.runs) && d.runs.length) setRuns(d.runs);
+        if (typeof d.heightFt === 'number') setHeightFt(d.heightFt);
+        if (typeof d.projectName === 'string') setProjectName(d.projectName);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const run = runs[sel] || newRun();
   const setRun = (patch: Partial<Run>) => setRuns(rs => rs.map((r, i) => i === sel ? { ...r, ...patch } : r));
@@ -296,7 +329,7 @@ export default function VisualEstimatorPage() {
       }
       return;
     }
-    if (view === 'plan') { drawPlan(ctx, cv.width, cv.height, pts, runs, sel, projectName, getPlanT(pts, cv.width, cv.height, drawMode), drawMode); return; }
+    if (view === 'plan') { drawPlan(ctx, cv.width, cv.height, pts, runs, sel, projectName, getPlanT(pts, cv.width, cv.height, drawMode), drawMode, drawMode && dragIdx == null ? hoverFt : null); return; }
     const g = ctx.createLinearGradient(0, 0, 0, cv.height);
     g.addColorStop(0, '#1a2740'); g.addColorStop(0.7, '#131f34'); g.addColorStop(0.7, '#0e1828'); g.addColorStop(1, '#0a1220');
     ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -307,7 +340,7 @@ export default function VisualEstimatorPage() {
     ctx.save(); ctx.filter = 'blur(8px)'; ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(ox + 8, oy + H - 4, W, 14); ctx.restore();
     drawAssembly(ctx, ox, oy, W, H, false, run, wFt, heightFt);
     ctx.fillStyle = '#7f90ad'; ctx.font = '12px -apple-system,sans-serif'; ctx.fillText(`Wall ${sel + 1} of ${runs.length} — ${SYSTEMS[run.system].name}`, 18, 26);
-  }, [pts, runs, sel, view, photo, corners, placing, tmp, heightFt, projectName, drawMode]);
+  }, [pts, runs, sel, view, photo, corners, placing, tmp, heightFt, projectName, drawMode, hoverFt, dragIdx]);
 
   // Keep one wall (run) per drawn segment: N corners => N-1 walls. Runs carry
   // per-wall config, so we only add/trim to match the segment count.
@@ -317,18 +350,42 @@ export default function VisualEstimatorPage() {
   }, [pts.length]);
 
   const onPhoto = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { const img = new Image(); img.onload = () => { setPhoto(img); setCorners(null); setView('photo'); setPlacing(true); setTmp([]); }; img.src = r.result as string; }; r.readAsDataURL(f); };
+  const localXY = (e: React.PointerEvent<HTMLCanvasElement>) => { const cv = cvRef.current!; const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; };
+  const snapFt = (t: PlanT, x: number, y: number): Pt => { const f = t.toFt(x, y); return { x: Math.round(f.x * 2) / 2, y: Math.round(f.y * 2) / 2 }; };
+  const hitPoint = (x: number, y: number, t: PlanT) => { for (let i = 0; i < pts.length; i++) { const q = t.toPx(pts[i]); if (Math.hypot(q.x - x, q.y - y) <= 13) return i; } return -1; };
+
   const onCanvasDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const cv = cvRef.current!; const r = cv.getBoundingClientRect(); const x = (e.clientX - r.left) * (cv.width / r.width), y = (e.clientY - r.top) * (cv.height / r.height);
+    const cv = cvRef.current!; const { x, y } = localXY(e);
     if (view === 'photo' && placing) { const next = [...tmp, { x, y }]; setTmp(next); if (next.length === 4) { setCorners(next); setPlacing(false); } return; }
     if (view === 'plan' && drawMode) {
-      // Same stable transform the canvas renders with, so the corner lands
-      // exactly under the cursor and earlier corners don't move. Snap to 0.5 ft.
-      const t = fixedTransform(cv.width, cv.height); const f = t.toFt(x, y);
-      const snapped = { x: Math.round(f.x * 2) / 2, y: Math.round(f.y * 2) / 2 };
-      setPts(ps => [...ps, snapped]); // walls auto-sync to segment count via effect
+      const t = fixedTransform(cv.width, cv.height);
+      // Grab an existing corner to move it (fixes "points disappear when I adjust").
+      const hit = hitPoint(x, y, t);
+      if (hit >= 0) { setDragIdx(hit); return; }
+      // Tap on/near the first corner (3+ pts) closes the shape into a loop.
+      if (pts.length >= 3) { const q0 = t.toPx(pts[0]); if (Math.hypot(q0.x - x, q0.y - y) <= 14) { setPts(ps => [...ps, { ...ps[0] }]); setDrawMode(false); return; } }
+      setPts(ps => [...ps, snapFt(t, x, y)]); // walls auto-sync to segment count via effect
     }
   };
-  const startDraw = () => { setDrawMode(true); setView('plan'); setPts([]); setRuns([]); setSel(0); };
+  const onCanvasMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (view !== 'plan' || !drawMode) return;
+    const cv = cvRef.current!; const { x, y } = localXY(e); const t = fixedTransform(cv.width, cv.height); const sp = snapFt(t, x, y);
+    if (dragIdx != null) setPts(ps => ps.map((p, i) => (i === dragIdx ? sp : p)));
+    else setHoverFt(sp);
+  };
+  const onCanvasUp = () => { if (dragIdx != null) setDragIdx(null); };
+  const onCanvasLeave = () => { setDragIdx(null); setHoverFt(null); };
+
+  // Enter draw/edit mode WITHOUT wiping the current shape (so corners can be
+  // adjusted). Only starts empty when there is nothing drawn yet.
+  const editShape = () => { setView('plan'); setDrawMode(true); };
+  const undoPoint = () => setPts(ps => ps.slice(0, -1));
+  const deleteShape = () => { setPts([]); setRuns([]); setSel(0); setDrawMode(true); setView('plan'); setHoverFt(null); try { window.localStorage.removeItem('glassestimate:ve:v1'); } catch { /* ignore */ } };
+  const saveShape = () => {
+    try { window.localStorage.setItem('glassestimate:ve:v1', JSON.stringify({ pts, runs, heightFt, projectName })); setSavedMsg('Saved ✓'); }
+    catch { setSavedMsg('Save failed'); }
+    setTimeout(() => setSavedMsg(''), 2000);
+  };
   const download = () => { const cv = cvRef.current!; const a = document.createElement('a'); a.download = `${projectName || 'glass'}-${view}.png`; a.href = cv.toDataURL('image/png'); a.click(); };
 
   let glass = 0, doorAdd = 0, area = 0;
@@ -380,9 +437,9 @@ export default function VisualEstimatorPage() {
               <button onClick={() => applyPreset('flat')} className={seg(false)}>▭ Flat wall</button>
               <button onClick={() => applyPreset('L')} className={seg(false)}>⌐ L-shape</button>
               <button onClick={() => applyPreset('C')} className={seg(false)}>⊐ C / U enclosure</button>
-              <button onClick={startDraw} className={seg(drawMode)}>✎ Draw it</button>
+              <button onClick={editShape} className={seg(drawMode)}>✎ Draw / Edit</button>
             </div>
-            {drawMode && <p className="text-[11px] text-amber-600 mt-2">Tap points on the plan to trace the walls. Each segment becomes a wall you can configure.</p>}
+            {drawMode && <p className="text-[11px] text-amber-600 mt-2">Tap to add corners · <b>drag a corner</b> to adjust · tap the <span className="text-emerald-600 font-semibold">green</span> first corner to close the shape. Each segment&apos;s length shows on the line.</p>}
           </div>
 
           <div className="card p-3">
@@ -433,15 +490,19 @@ export default function VisualEstimatorPage() {
             <button onClick={() => { setView('photo'); if (photo && !corners) { setPlacing(true); setTmp([]); } }} className={`flex-1 py-2 rounded-lg text-sm border ${view === 'photo' ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-600 border-slate-200'}`}>On site photo</button>
           </div>
           <div className="card overflow-hidden border-2 border-slate-200 relative">
-            <canvas ref={cvRef} width={1000} height={720} style={{ touchAction: 'none' }} onPointerDown={onCanvasDown} className="w-full block" />
+            <canvas ref={cvRef} width={1000} height={720} style={{ touchAction: 'none' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerLeave={onCanvasLeave} className="w-full block" />
             {placing && <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-navy-900/90 text-white text-xs px-4 py-2 rounded-full pointer-events-none text-center">Tap the 4 corners of Wall {sel + 1}: TL → TR → BR → BL</div>}
-            {view === 'plan' && drawMode && <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-amber-500/90 text-white text-xs px-4 py-2 rounded-full pointer-events-none">Tap to add wall corners</div>}
+            {view === 'plan' && drawMode && <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-amber-500/90 text-white text-xs px-4 py-2 rounded-full pointer-events-none">Tap to add · drag to adjust · tap green corner to close</div>}
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <label className="btn-secondary btn-sm cursor-pointer flex-1 text-center"><input type="file" accept="image/*" onChange={onPhoto} className="hidden" />📷 Site photo</label>
+          <div className="flex gap-2 flex-wrap items-center">
+            <label className="btn-secondary btn-sm cursor-pointer text-center"><input type="file" accept="image/*" onChange={onPhoto} className="hidden" />📷 Site photo</label>
             {photo && view === 'photo' && <button onClick={() => { setCorners(null); setPlacing(true); setTmp([]); }} className="btn-secondary btn-sm">📐 Re-place</button>}
-            {drawMode && <button onClick={() => setDrawMode(false)} className="btn-secondary btn-sm">✓ Finish shape</button>}
+            {drawMode && <button onClick={undoPoint} disabled={pts.length === 0} className="btn-secondary btn-sm disabled:opacity-50">↶ Undo point</button>}
+            {drawMode && <button onClick={() => setDrawMode(false)} disabled={pts.length < 2} className="btn-secondary btn-sm disabled:opacity-50">✓ Finish shape</button>}
+            <button onClick={saveShape} disabled={pts.length < 2} className="btn-secondary btn-sm disabled:opacity-50">💾 Save</button>
+            <button onClick={deleteShape} className="btn-secondary btn-sm text-red-600">🗑 Delete</button>
             <button onClick={download} className="btn-primary btn-sm flex-1">⬇ Download</button>
+            {savedMsg && <span className="text-[11px] text-green-600 font-medium">{savedMsg}</span>}
           </div>
           <p className="text-[11px] text-slate-400 text-center">On the photo, the render maps onto <b>Wall {sel + 1}</b> — switch walls on the left to place each one.</p>
         </div>
