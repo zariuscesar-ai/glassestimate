@@ -48,7 +48,7 @@ function SignupForm() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Create your shop</h1>
-          <p className="text-slate-500 text-sm mt-1">Founding price locks in for life &mdash; no card required today.</p>
+          <p className="text-slate-500 text-sm mt-1">Founding price locked in for 2 years &mdash; no card required today.</p>
         </div>
         <form onSubmit={submit} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
           {error && <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div>}
