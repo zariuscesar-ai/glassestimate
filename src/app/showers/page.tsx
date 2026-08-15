@@ -237,11 +237,11 @@ function Configurator() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 mb-6 grid sm:grid-cols-2 gap-3">
         <label className="block">
           <span className="block text-[11px] text-slate-500 mb-1 uppercase tracking-wide font-semibold">Project name</span>
-          <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="e.g. Master bath remodel" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+          <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="e.g. Master bath remodel" className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
         </label>
         <label className="block">
           <span className="block text-[11px] text-slate-500 mb-1 uppercase tracking-wide font-semibold">Client</span>
-          <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Customer name" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+          <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Customer name" className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
         </label>
       </div>
 
@@ -321,7 +321,7 @@ function Configurator() {
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <label className="block">
                         <span className="block text-[11px] text-slate-500 mb-1">Standard size (W × H)</span>
-                        <select className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" value=""
+                        <select className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-2 py-1.5 text-sm" value=""
                           onChange={(ev) => { const i = parseInt(ev.target.value); if (!Number.isNaN(i)) applyStdSize(e.id, STANDARD_SIZES[doorTypeOf(e)][i]); }}>
                           <option value="">Pick a standard size…</option>
                           {STANDARD_SIZES[doorTypeOf(e)].map((s, i) => <option key={i} value={i}>{s.label}</option>)}
@@ -329,7 +329,7 @@ function Configurator() {
                       </label>
                       <label className="block">
                         <span className="block text-[11px] text-slate-500 mb-1">Door width</span>
-                        <select className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                        <select className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-2 py-1.5 text-sm"
                           value={POPULAR_DOOR_WIDTHS.includes(e.widthsIn[doorIndex(e.style)] ?? -1) ? String(e.widthsIn[doorIndex(e.style)]) : "custom"}
                           onChange={(ev) => { if (ev.target.value !== "custom") setDoorWidth(e.id, parseFloat(ev.target.value)); }}>
                           {POPULAR_DOOR_WIDTHS.map((w) => <option key={w} value={w}>{w}&quot;</option>)}
@@ -338,7 +338,7 @@ function Configurator() {
                       </label>
                       <label className="block">
                         <span className="block text-[11px] text-slate-500 mb-1">Height</span>
-                        <select className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                        <select className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-2 py-1.5 text-sm"
                           value={POPULAR_DOOR_HEIGHTS.includes(e.heightIn) ? String(e.heightIn) : "custom"}
                           onChange={(ev) => { if (ev.target.value !== "custom") setDoorHeight(e.id, parseFloat(ev.target.value)); }}>
                           {POPULAR_DOOR_HEIGHTS.map((h) => <option key={h} value={h}>{h}&quot;</option>)}
@@ -437,8 +437,8 @@ function Configurator() {
                                 {(e.hardware.placements || []).map((p, pi) => (
                                   <div key={p.id} className="grid grid-cols-[1fr_auto_auto] gap-1.5 items-center">
                                     <span className="text-[11px] text-slate-600 truncate" title={p.label}>{p.label}</span>
-                                    <input type="number" step={0.0625} value={p.fromTopIn} onChange={(ev) => setPlacement(e.id, pi, { fromTopIn: parseFloat(ev.target.value) || 0 })} className="w-16 rounded border border-slate-300 px-1.5 py-1 text-xs" />
-                                    <input type="number" step={0.0625} value={p.fromEdgeIn} onChange={(ev) => setPlacement(e.id, pi, { fromEdgeIn: parseFloat(ev.target.value) || 0 })} className="w-16 rounded border border-slate-300 px-1.5 py-1 text-xs" />
+                                    <input type="number" step={0.0625} value={p.fromTopIn} onChange={(ev) => setPlacement(e.id, pi, { fromTopIn: parseFloat(ev.target.value) || 0 })} className="w-16 rounded border border-slate-300 bg-white text-slate-900 px-1.5 py-1 text-xs" />
+                                    <input type="number" step={0.0625} value={p.fromEdgeIn} onChange={(ev) => setPlacement(e.id, pi, { fromEdgeIn: parseFloat(ev.target.value) || 0 })} className="w-16 rounded border border-slate-300 bg-white text-slate-900 px-1.5 py-1 text-xs" />
                                   </div>
                                 ))}
                               </div>
@@ -581,7 +581,7 @@ function Configurator() {
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-slate-600">
               <span>Markup</span>
-              <input type="number" min={0} value={markupPct} onChange={(e) => setMarkupPct(parseFloat(e.target.value) || 0)} className="w-16 rounded border border-slate-300 px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+              <input type="number" min={0} value={markupPct} onChange={(e) => setMarkupPct(parseFloat(e.target.value) || 0)} className="w-16 rounded border border-slate-300 bg-white text-slate-900 px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
               <span>%</span>
             </div>
             <span className="font-medium text-slate-800">+{money(markupAmt)}</span>
@@ -589,7 +589,7 @@ function Configurator() {
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-slate-600">
               <span>Tax</span>
-              <input type="number" min={0} value={taxPct} onChange={(e) => setTaxPct(parseFloat(e.target.value) || 0)} className="w-16 rounded border border-slate-300 px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+              <input type="number" min={0} value={taxPct} onChange={(e) => setTaxPct(parseFloat(e.target.value) || 0)} className="w-16 rounded border border-slate-300 bg-white text-slate-900 px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
               <span>%</span>
             </div>
             <span className="font-medium text-slate-800">+{money(taxAmt)}</span>
@@ -655,7 +655,7 @@ function NumberField({ label, value, onChange, step }: { label: string; value: n
       <span className="block text-[11px] text-slate-500 mb-1">{label}</span>
       <input type="number" min={0} step={step ? 0.0625 : undefined} value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+        className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
     </label>
   );
 }
@@ -673,7 +673,7 @@ function FractionField({ label, value, onChange, step: _step }: { label: string;
       <input type="text" inputMode="text" value={display} placeholder={"e.g. 30 or 79 1/4\""}
         onChange={(ev) => { setText(ev.target.value); const v = parseInches(ev.target.value); if (v !== null) onChange(v); }}
         onBlur={() => { const v = parseInches(text ?? ""); if (v !== null) onChange(v); setText(null); }}
-        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+        className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
     </label>
   );
 }
@@ -683,7 +683,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
     <label className="block">
       <span className="block text-[11px] text-slate-500 mb-1">{label}</span>
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 capitalize">
+        className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 capitalize">
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </label>
