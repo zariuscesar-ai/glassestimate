@@ -264,12 +264,13 @@ export interface HardwareLayout {
   clampsPerJoint: number;   // clamps per fixed-panel edge (2 or 3)
   hingeType?: string;       // HINGE_TYPES id
   clampType?: string;       // CLAMP_TYPES id
+  holeDiaIn?: number;       // back-to-back handle drilled-hole diameter
   placements: HardwarePlacement[]; // edited/custom placements
 }
 
 export const DEFAULT_HARDWARE: HardwareLayout = {
   enabled: true, useStandard: true, handleCtcIn: 6, handleHeightIn: 40, clampsPerJoint: 2,
-  hingeType: 'wall-geneva', clampType: 'glass-wall', placements: [],
+  hingeType: 'wall-geneva', clampType: 'glass-wall', holeDiaIn: 0.5, placements: [],
 };
 
 // Standard frameless placement rules (inches) — editable defaults per shop,
@@ -318,20 +319,32 @@ export const TOWEL_BAR_TYPES: TowelBarOption[] = [
 // PANEL usually needs NO cutout — only a position. The exceptions are glass-to-
 // glass hinges (the fixed panel may need a small notch) and back-to-back handles
 // (drilled holes). These catalogs carry the mount + whether fabrication is needed.
-export interface HingeOption { id: string; name: string; mount: string; panelFab: FabKind; note: string; }
+export interface HingeOption { id: string; name: string; mount: string; panelFab: FabKind; glass: string; note: string; }
 export const HINGE_TYPES: HingeOption[] = [
-  { id: 'wall-geneva', name: 'Wall-mount (Geneva-style)', mount: 'glass-to-wall', panelFab: 'none', note: 'No door cutout — clamps the door edge, screws to the wall' },
-  { id: 'wall-square', name: 'Wall-mount (square / Pinnacle-style)', mount: 'glass-to-wall', panelFab: 'none', note: 'No door cutout — edge clamp to the wall' },
-  { id: 'glass-glass', name: 'Glass-to-glass hinge', mount: 'glass-to-glass', panelFab: 'notch', note: 'No door cutout; the fixed panel takes a small notch at each hinge' },
-  { id: 'offset', name: 'Offset / U-clamp hinge', mount: 'glass-to-wall', panelFab: 'none', note: 'No door cutout — U-clamp on the door edge' },
+  { id: 'wall-geneva', name: 'Wall-mount (Geneva-style)', mount: 'glass-to-wall', panelFab: 'none', glass: '3/8"–1/2"', note: 'No door cutout — clamps the door edge, screws to the wall' },
+  { id: 'wall-square', name: 'Wall-mount (square / Pinnacle-style)', mount: 'glass-to-wall', panelFab: 'none', glass: '3/8"–1/2"', note: 'No door cutout — edge clamp to the wall' },
+  { id: 'glass-glass', name: 'Glass-to-glass hinge', mount: 'glass-to-glass', panelFab: 'notch', glass: '3/8"–1/2"', note: 'No door cutout; the fixed panel takes a small notch at each hinge' },
+  { id: 'offset', name: 'Offset / U-clamp hinge', mount: 'glass-to-wall', panelFab: 'none', glass: '3/8"–1/2"', note: 'No door cutout — U-clamp on the door edge' },
 ];
 
-// Clamp mounting for fixed panels. All grip the glass edge → no cutout.
-export interface ClampOption { id: string; name: string; note: string; }
+// Clamp mounting for fixed panels. All grip the glass edge → no cutout. `angle`
+// is the joint angle the clamp is made for; `glass` is the thickness range it fits.
+export interface ClampOption { id: string; name: string; angle: number; glass: string; note: string; }
 export const CLAMP_TYPES: ClampOption[] = [
-  { id: 'glass-wall', name: 'Wall-mount clamp', note: 'No cutout — clamps the panel edge, screws to the wall' },
-  { id: 'glass-glass-180', name: 'Glass-to-glass (180°)', note: 'No cutout — joins two in-line panels edge to edge' },
-  { id: 'corner-90', name: '90° corner glass-to-glass', note: 'No cutout — joins two panels at a 90° corner' },
+  { id: 'glass-wall', name: 'Wall-mount clamp', angle: 180, glass: '3/8"–1/2"', note: 'No cutout — clamps the panel edge, screws to the wall' },
+  { id: 'glass-glass-180', name: 'Glass-to-glass (180°)', angle: 180, glass: '3/8"–1/2"', note: 'No cutout — joins two in-line panels edge to edge' },
+  { id: 'corner-90', name: '90° corner glass-to-glass', angle: 90, glass: '3/8"–1/2"', note: 'No cutout — joins two panels at a 90° corner' },
+  { id: 'corner-90-t', name: '90° T-junction glass-to-glass', angle: 90, glass: '3/8"–1/2"', note: 'No cutout — a panel meets the middle of another at 90°' },
+  { id: 'neo-135', name: '135° neo-angle glass-to-glass', angle: 135, glass: '3/8"–1/2"', note: 'No cutout — joins two panels at a 135° neo-angle corner' },
+];
+
+// Back-to-back handle / knob drilled-hole templates (the one true glass fab on a
+// door). diaIn is the through-hole diameter; fits the listed glass thickness.
+export interface HandleHoleOption { id: string; label: string; diaIn: number; glass: string; }
+export const HANDLE_HOLE_SIZES: HandleHoleOption[] = [
+  { id: 'std-050', label: '1/2" hole (standard)', diaIn: 0.5, glass: '3/8"–1/2"' },
+  { id: 'heavy-075', label: '3/4" hole (heavy pull)', diaIn: 0.75, glass: '3/8"–1/2"' },
+  { id: 'tube-100', label: '1" hole (tubular pull)', diaIn: 1.0, glass: '1/2"' },
 ];
 
 export interface RateTable {

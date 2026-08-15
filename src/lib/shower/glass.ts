@@ -259,8 +259,9 @@ export function standardHardware(cfg: EnclosureConfig): HardwarePlacement[] {
       const hCenter = round16(Math.max(1, H - (hw?.handleHeightIn ?? 40)));
       const ctc = hw?.handleCtcIn ?? 6;
       const edge = round16(Math.max(0, W - HW_STD.handleFromLatchEdgeIn));
-      out.push({ id: `hn-${idx}-u`, kind: 'handle', label: 'Handle hole (upper)', panel: 'door', panelIndex: idx, fromTopIn: round16(Math.max(1, hCenter - ctc / 2)), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn, fab: 'hole', mount: 'drilled' });
-      out.push({ id: `hn-${idx}-l`, kind: 'handle', label: 'Handle hole (lower)', panel: 'door', panelIndex: idx, fromTopIn: round16(hCenter + ctc / 2), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn, fab: 'hole', mount: 'drilled' });
+      const dia = hw?.holeDiaIn ?? HW_STD.holeDiaIn;
+      out.push({ id: `hn-${idx}-u`, kind: 'handle', label: 'Handle hole (upper)', panel: 'door', panelIndex: idx, fromTopIn: round16(Math.max(1, hCenter - ctc / 2)), fromEdgeIn: edge, diaIn: dia, fab: 'hole', mount: 'drilled' });
+      out.push({ id: `hn-${idx}-l`, kind: 'handle', label: 'Handle hole (lower)', panel: 'door', panelIndex: idx, fromTopIn: round16(hCenter + ctc / 2), fromEdgeIn: edge, diaIn: dia, fab: 'hole', mount: 'drilled' });
     } else if (p.kind === 'panel' || p.kind === 'return') {
       // A glass-to-glass hinge notches the FIXED panel on the door side at each hinge.
       if (hinge.panelFab === 'notch' && idx > 0 && panels[idx - 1]?.kind === 'door') {
@@ -268,9 +269,11 @@ export function standardHardware(cfg: EnclosureConfig): HardwarePlacement[] {
         const ny = [HW_STD.hingeInsetFromEndIn, ...(three ? [round16(H / 2)] : []), round16(Math.max(1, H - HW_STD.hingeInsetFromEndIn))];
         ny.forEach((t, k) => out.push({ id: `nt-${idx}-${k}`, kind: 'clamp', label: `Hinge notch ${k + 1} (glass-to-glass)`, panel: p.kind, panelIndex: idx, fromTopIn: t, fromEdgeIn: 0, fab: 'notch', mount: 'glass-to-glass hinge' }));
       }
-      // Panel clamps grip the edge — no cutout. The return of a corner style uses a
-      // 90° corner clamp; otherwise the enclosure's chosen clamp type.
-      const mount = p.kind === 'return' && cornerJoint ? '90° corner' : clampT.id === 'corner-90' ? '90° corner' : clampT.id === 'glass-glass-180' ? 'glass-to-glass' : 'wall-mount';
+      // Panel clamps grip the edge — no cutout. A corner return uses the joint's
+      // real angle (neo-angle = 135°, corner-return = 90°); otherwise the chosen clamp.
+      const mount = p.kind === 'return'
+        ? (cfg.style === 'neo-angle' ? '135° neo corner' : cornerJoint ? '90° corner' : `${clampT.angle}°`)
+        : `${clampT.angle}°${clampT.id === 'glass-wall' ? ' wall-mount' : ' glass-to-glass'}`;
       const n = Math.max(2, Math.min(3, hw?.clampsPerJoint ?? 2));
       for (let i = 0; i < n; i++) {
         const t = HW_STD.clampInsetFromEndIn + (i * (H - 2 * HW_STD.clampInsetFromEndIn)) / (n - 1);

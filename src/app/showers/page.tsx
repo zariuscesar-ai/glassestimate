@@ -1,7 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL, POPULAR_MODELS, DEFAULT_HARDWARE, POPULAR_DOOR_WIDTHS, POPULAR_DOOR_HEIGHTS, HANDLE_TYPES, TOWEL_BAR_TYPES, HINGE_TYPES, CLAMP_TYPES } from "@/lib/shower/types";
+import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL, POPULAR_MODELS, DEFAULT_HARDWARE, POPULAR_DOOR_WIDTHS, POPULAR_DOOR_HEIGHTS, HANDLE_TYPES, TOWEL_BAR_TYPES, HINGE_TYPES, CLAMP_TYPES, HANDLE_HOLE_SIZES } from "@/lib/shower/types";
+import { HARDWARE_REFERENCE } from "@/lib/shower/hardware-reference";
 import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize, PonyWall, PopularModel, HardwareLayout, HardwarePlacement } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
@@ -43,6 +44,7 @@ function Configurator() {
   const [taxPct, setTaxPct] = useState(0);
   const [deductions, setDeductions] = useState<Deductions>(DEFAULT_DEDUCTIONS);
   const [showGaps, setShowGaps] = useState(false);
+  const [showRef, setShowRef] = useState(false);
   const [planView, setPlanView] = useState(false);
   const [sketchFor, setSketchFor] = useState<string | null>(null);
   const [companySlug, setCompanySlug] = useState("");
@@ -266,6 +268,34 @@ function Configurator() {
         )}
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-white p-4 mb-6">
+        <button type="button" onClick={() => setShowRef((v) => !v)} className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
+          Hardware reference — clamps, hinges, sliding, handles <span className="text-slate-400">{showRef ? "▲" : "▼"}</span>
+        </button>
+        {showRef && (
+          <div className="mt-3 grid md:grid-cols-2 gap-4">
+            {HARDWARE_REFERENCE.map((sec) => (
+              <div key={sec.title} className="rounded-lg border border-slate-100 p-3">
+                <div className="text-xs font-semibold text-slate-800">{sec.title}</div>
+                <p className="text-[11px] text-slate-500 mt-0.5 mb-2">{sec.blurb}</p>
+                <table className="w-full text-[11px]">
+                  <tbody>
+                    {sec.rows.map((r, i) => (
+                      <tr key={i} className="border-t border-slate-100 align-top">
+                        <td className="py-1 pr-2 text-slate-700 font-medium whitespace-nowrap">{r.label}</td>
+                        <td className="py-1 pr-2 text-slate-500">{r.spec}</td>
+                        <td className="py-1 text-right whitespace-nowrap"><span className={r.fab.startsWith("Drilled") ? "text-amber-600" : r.fab.includes("notch") ? "text-rose-600" : "text-slate-400"}>{r.fab}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            <p className="md:col-span-2 text-[11px] text-slate-400">Brand-neutral specs compiled from published manufacturer catalogs &amp; install guides (CRL, FHC, PRL, Leader). Positions follow common install spacing; confirm your specific hardware&apos;s template before fabrication.</p>
+          </div>
+        )}
+      </div>
+
       <div className="space-y-6">
         {enclosures.map((e, idx) => {
           const est = project.enclosures[idx];
@@ -413,13 +443,14 @@ function Configurator() {
                           <SelectField label="Clamp type" value={e.hardware.clampType || "glass-wall"} onChange={(v) => setHardware(e.id, { clampType: v })} options={CLAMP_TYPES.map((c) => ({ value: c.id, label: c.name }))} />
                         </div>
                         <div className="text-[11px] text-slate-400 -mt-1 space-y-0.5">
-                          <div>🔩 {HINGE_TYPES.find((h) => h.id === (e.hardware!.hingeType || "wall-geneva"))?.note}</div>
-                          <div>🗜️ {CLAMP_TYPES.find((c) => c.id === (e.hardware!.clampType || "glass-wall"))?.note}</div>
+                          {(() => { const h = HINGE_TYPES.find((x) => x.id === (e.hardware!.hingeType || "wall-geneva")); return <div>🔩 {h?.note} <span className="text-slate-300">· fits {h?.glass}</span></div>; })()}
+                          {(() => { const c = CLAMP_TYPES.find((x) => x.id === (e.hardware!.clampType || "glass-wall")); return <div>🗜️ {c?.note} <span className="text-slate-300">· {c?.angle}° · fits {c?.glass}</span></div>; })()}
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                           <FractionField label="Handle CTC" value={e.hardware.handleCtcIn} onChange={(v) => setHardware(e.id, { handleCtcIn: v })} step />
                           <FractionField label="Handle height (floor)" value={e.hardware.handleHeightIn} onChange={(v) => setHardware(e.id, { handleHeightIn: v })} />
                           <NumberField label="Clamps / panel" value={e.hardware.clampsPerJoint} onChange={(v) => setHardware(e.id, { clampsPerJoint: Math.max(2, Math.min(3, Math.round(v))) })} />
+                          <SelectField label="Handle hole ⌀" value={String(e.hardware.holeDiaIn ?? 0.5)} onChange={(v) => setHardware(e.id, { holeDiaIn: parseFloat(v) })} options={HANDLE_HOLE_SIZES.map((h) => ({ value: String(h.diaIn), label: h.label }))} />
                         </div>
                         <div className="rounded-md bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 text-[11px] text-emerald-800">🛠 {fabSummary(effCfg(e))}</div>
                         <label className="flex items-center gap-1.5 text-xs text-slate-600">
