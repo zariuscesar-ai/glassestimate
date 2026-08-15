@@ -1,50 +1,71 @@
 "use client";
 
-// Finger-sketch pad: the dealer draws the top-down outline of the shower walls
-// with a finger (iPad) or mouse; on release the stroke is cleaned (simplify →
-// snap to 0/45/90 → merge) and classified into a shower system with proportional
-// wall widths. "Use this system" hands the result back to the configurator.
+// Shower opening sketch pad (tap-to-place, Illustrator-style). The dealer taps
+// corners for the walls, drags any corner to adjust, and types the exact length
+// of each line. It never wipes on a tap, supports undo, keeps the sketch on this
+// device, and detects the shower system so it can be added to the enclosure.
 
-import { useRef, useState } from "react";
-import { classify, cleanStroke, type Pt, type SketchResult } from "@/lib/shower/sketch";
+import { useEffect, useRef, useState } from "react";
+import { classifyRaw, type Pt, type SketchResult } from "@/lib/shower/sketch";
 
 const W = 600, H = 360;
+const KEY = "glassestimate:showersketch:v1";
 
 export default function SketchPad({ onApply, onClose }: { onApply: (r: SketchResult) => void; onClose?: () => void }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [pts, setPts] = useState<Pt[]>([]);
-  const [drawing, setDrawing] = useState(false);
-  const [result, setResult] = useState<SketchResult | null>(null);
+  const [lensIn, setLensIn] = useState<number[]>([]);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [hover, setHover] = useState<Pt | null>(null);
+  const [savedMsg, setSavedMsg] = useState("");
 
-  const toLocal = (e: React.PointerEvent): Pt => {
-    const r = svgRef.current!.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
-  };
+  // Restore last sketch (kept on this device) so a tap never loses prior work.
+  useEffect(() => {
+    try { const raw = window.localStorage.getItem(KEY); if (raw) { const d = JSON.parse(raw); if (Array.isArray(d.pts)) setPts(d.pts); if (Array.isArray(d.lensIn)) setLensIn(d.lensIn); } } catch { /* ignore */ }
+  }, []);
+
+  const result: SketchResult | null = pts.length >= 2 ? classifyRaw(pts) : null;
+
+  // One editable length per segment; default from the detected proportional
+  // widths, but preserve any length the dealer already typed.
+  useEffect(() => {
+    const need = Math.max(0, pts.length - 1);
+    const def = pts.length >= 2 ? classifyRaw(pts).widthsIn : [];
+    setLensIn(prev => Array.from({ length: need }, (_, i) => prev[i] ?? def[i] ?? 30));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pts.length]);
+
+  const local = (e: React.PointerEvent): Pt => { const r = svgRef.current!.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }; };
+  const hitCorner = (p: Pt) => { for (let i = 0; i < pts.length; i++) if (Math.hypot(pts[i].x - p.x, pts[i].y - p.y) <= 14) return i; return -1; };
+
   const down = (e: React.PointerEvent) => {
     e.preventDefault();
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    const p = toLocal(e); setPts([p]); setDrawing(true); setResult(null);
+    const p = local(e); const hit = hitCorner(p);
+    if (hit >= 0) { setDragIdx(hit); return; }   // grab a corner to move it
+    setPts(ps => [...ps, p]);                     // otherwise add a corner (never wipes)
   };
   const move = (e: React.PointerEvent) => {
-    if (!drawing) return;
-    const p = toLocal(e);
-    setPts((l) => (l.length && Math.hypot(p.x - l[l.length - 1].x, p.y - l[l.length - 1].y) < 3 ? l : [...l, p]));
+    const p = local(e);
+    if (dragIdx != null) setPts(ps => ps.map((q, i) => (i === dragIdx ? p : q)));
+    else setHover(p);
   };
-  const up = () => {
-    if (!drawing) return;
-    setDrawing(false);
-    setPts((l) => { if (l.length >= 2) setResult(classify(l)); return l; });
-  };
-  const clear = () => { setPts([]); setResult(null); };
+  const up = () => setDragIdx(null);
+  const leave = () => { setDragIdx(null); setHover(null); };
 
-  const rawPath = pts.length ? "M " + pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ") : "";
-  const clean = result?.corners || (pts.length >= 2 && !drawing ? cleanStroke(pts) : []);
-  const cleanPath = clean.length >= 2 ? "M " + clean.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ") : "";
+  const undo = () => setPts(ps => ps.slice(0, -1));
+  const clear = () => { setPts([]); setLensIn([]); setHover(null); try { window.localStorage.removeItem(KEY); } catch { /* ignore */ } };
+  const save = () => { try { window.localStorage.setItem(KEY, JSON.stringify({ pts, lensIn })); setSavedMsg("Saved ✓"); } catch { setSavedMsg("Save failed"); } setTimeout(() => setSavedMsg(""), 1800); };
+  const add = () => { if (result) { save(); onApply({ ...result, widthsIn: lensIn.length ? lensIn : result.widthsIn }); } };
+  const setLen = (i: number, v: number) => setLensIn(l => l.map((x, j) => (j === i ? v : x)));
+
+  const P = (p: Pt) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+  const line = pts.length >= 2 ? "M " + pts.map(P).join(" L ") : "";
 
   return (
     <div className="rounded-lg border border-slate-200 p-3 bg-white">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] text-slate-500">Draw the top-down outline of the walls with your finger — one continuous line. We snap it to clean 90°/45° walls and pick the system.</p>
+        <p className="text-[11px] text-slate-500"><b>Tap</b> corners for the walls · <b>drag</b> a corner to adjust · type each line&apos;s length below. We detect the system.</p>
         {onClose && <button type="button" onClick={onClose} className="text-[11px] text-slate-400 hover:text-slate-600 ml-2">Close</button>}
       </div>
       <svg
@@ -52,31 +73,43 @@ export default function SketchPad({ onApply, onClose }: { onApply: (r: SketchRes
         viewBox={`0 0 ${W} ${H}`}
         className="w-full rounded-lg border border-slate-200 select-none"
         style={{ touchAction: "none", background: "#f8fafc", cursor: "crosshair", aspectRatio: `${W} / ${H}` }}
-        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={leave}
         role="img" aria-label="Sketch the shower opening"
       >
-        {/* faint grid */}
-        {Array.from({ length: Math.floor(W / 30) + 1 }, (_, i) => (
-          <line key={"v" + i} x1={i * 30} y1={0} x2={i * 30} y2={H} stroke="#e2e8f0" strokeWidth={0.5} />
-        ))}
-        {Array.from({ length: Math.floor(H / 30) + 1 }, (_, i) => (
-          <line key={"h" + i} x1={0} y1={i * 30} x2={W} y2={i * 30} stroke="#e2e8f0" strokeWidth={0.5} />
-        ))}
-        {rawPath && <path d={rawPath} fill="none" stroke="#94a3b8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={result ? "4 4" : undefined} />}
-        {cleanPath && <path d={cleanPath} fill="none" stroke="#0f766e" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />}
-        {clean.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={5} fill="#0f766e" />)}
-        {!pts.length && <text x={W / 2} y={H / 2} textAnchor="middle" fontSize={16} fill="#cbd5e1">✏️ draw here</text>}
+        {Array.from({ length: Math.floor(W / 30) + 1 }, (_, i) => <line key={"v" + i} x1={i * 30} y1={0} x2={i * 30} y2={H} stroke="#e2e8f0" strokeWidth={0.5} />)}
+        {Array.from({ length: Math.floor(H / 30) + 1 }, (_, i) => <line key={"h" + i} x1={0} y1={i * 30} x2={W} y2={i * 30} stroke="#e2e8f0" strokeWidth={0.5} />)}
+        {hover && pts.length >= 1 && dragIdx == null && <line x1={pts[pts.length - 1].x} y1={pts[pts.length - 1].y} x2={hover.x} y2={hover.y} stroke="rgba(37,99,235,0.6)" strokeWidth={2} strokeDasharray="6 4" />}
+        {line && <path d={line} fill="none" stroke="#0f766e" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />}
+        {pts.slice(0, -1).map((a, i) => { const b = pts[i + 1]; const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; return <text key={"L" + i} x={mx} y={my - 6} textAnchor="middle" fontSize={13} fontWeight={700} fill="#0f766e">{lensIn[i] ?? ""}&quot;</text>; })}
+        {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={7} fill="#2563eb" stroke="#ffffff" strokeWidth={2} />)}
+        {!pts.length && <text x={W / 2} y={H / 2} textAnchor="middle" fontSize={16} fill="#cbd5e1">👆 tap the first corner</text>}
       </svg>
+
+      {pts.length >= 2 && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {lensIn.map((L, i) => (
+            <label key={i} className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-500 w-12">Wall {i + 1}</span>
+              <input type="number" min={1} step={0.25} value={L} onChange={e => setLen(i, parseFloat(e.target.value) || 0)}
+                className="w-full rounded border border-slate-300 bg-white text-slate-900 px-1.5 py-1 text-xs" />
+              <span className="text-[10px] text-slate-400">in</span>
+            </label>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
         <div className="text-sm">
           {result
-            ? <span className="text-slate-700">Detected: <b className="text-emerald-700">{result.detected}</b> <span className="text-slate-400">· walls {result.widthsIn.join('" / ')}"</span></span>
-            : <span className="text-slate-400">Draw an outline, then apply.</span>}
+            ? <span className="text-slate-700">Detected: <b className="text-emerald-700">{result.detected}</b></span>
+            : <span className="text-slate-400">Tap at least two corners.</span>}
+          {savedMsg && <span className="text-[11px] text-green-600 font-medium ml-2">{savedMsg}</span>}
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={clear} className="text-xs rounded-lg border border-slate-300 text-slate-600 px-2.5 py-1 hover:bg-slate-50">Clear</button>
-          <button type="button" disabled={!result} onClick={() => result && onApply(result)}
-            className="text-xs rounded-lg bg-emerald-600 text-white px-3 py-1 hover:bg-emerald-700 disabled:opacity-50">Use this system →</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={undo} disabled={!pts.length} className="text-xs rounded-lg border border-slate-300 text-slate-600 px-2.5 py-1 hover:bg-slate-50 disabled:opacity-50">↶ Undo</button>
+          <button type="button" onClick={save} disabled={pts.length < 2} className="text-xs rounded-lg border border-slate-300 text-slate-600 px-2.5 py-1 hover:bg-slate-50 disabled:opacity-50">💾 Save</button>
+          <button type="button" onClick={clear} className="text-xs rounded-lg border border-slate-300 text-red-600 px-2.5 py-1 hover:bg-red-50">🗑 Clear</button>
+          <button type="button" onClick={add} disabled={!result} className="text-xs rounded-lg bg-emerald-600 text-white px-3 py-1 hover:bg-emerald-700 disabled:opacity-50">➕ Add to this enclosure</button>
         </div>
       </div>
     </div>

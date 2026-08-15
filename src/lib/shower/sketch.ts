@@ -135,14 +135,22 @@ function scaleWidths(segs: Seg[]): number[] {
  * Falls back to a single door when the stroke is too small to read.
  */
 export function classify(raw: Pt[]): SketchResult {
-  const corners = cleanStroke(raw);
+  return classifyRaw(cleanStroke(raw));
+}
+
+/**
+ * Classify an already-clean set of corners (from tap-to-place) into a shower
+ * style + proportional wall widths — WITHOUT re-simplifying, so the shape the
+ * dealer placed is preserved.
+ *  1 wall            → Door + panel (inline)
+ *  2 walls, ~90°     → 90° corner / return
+ *  2–3 walls, diagonal → Neo-angle
+ *  3 walls, squared  → Inline 3-panel
+ */
+export function classifyRaw(corners: Pt[]): SketchResult {
   const segs = toSegments(corners);
   const widths = scaleWidths(segs);
-
-  const isDiagonal = (s: Seg) => {
-    const m = ((Math.round(s.angleDeg) % 90) + 90) % 90;
-    return Math.min(m, 90 - m) > 20; // ~45° heading
-  };
+  const isDiagonal = (s: Seg) => { const m = ((Math.round(s.angleDeg) % 90) + 90) % 90; return Math.min(m, 90 - m) > 20; };
   const anyDiagonal = segs.some(isDiagonal);
 
   if (segs.length <= 0) return { style: 'single-door', widthsIn: [30], detected: 'Single door', corners };
@@ -151,7 +159,6 @@ export function classify(raw: Pt[]): SketchResult {
     if (anyDiagonal) return { style: 'neo-angle', widthsIn: [widths[0], widths[1], widths[0]], detected: 'Neo-angle', corners };
     return { style: 'corner-return', widthsIn: [widths[0], widths[1]], detected: '90° corner / return', corners };
   }
-  // 3+ walls
   if (anyDiagonal) return { style: 'neo-angle', widthsIn: [widths[0], widths[1], widths[2]], detected: 'Neo-angle', corners };
   return { style: 'inline-3-panel', widthsIn: [widths[0], widths[1], widths[2]], detected: 'Inline 3-panel', corners };
 }
