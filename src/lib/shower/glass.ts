@@ -3,7 +3,7 @@
 // Pure functions, no deps — unit-testable.
 
 import type { EnclosureConfig, Opening, OpeningKind, Deductions, ShowerStyle, GlassThickness, DoorType, HardwarePlacement } from './types';
-import { DEFAULT_DEDUCTIONS, HW_STD } from './types';
+import { DEFAULT_DEDUCTIONS, HW_STD, HINGE_TYPES, CLAMP_TYPES } from './types';
 
 const SLIDING_DOOR_TYPES: DoorType[] = ['single-slider', 'bypass', 'barn', 'tub-slider'];
 export function isSlidingDoor(dt?: DoorType): boolean { return !!dt && SLIDING_DOOR_TYPES.includes(dt); }
@@ -242,25 +242,39 @@ export function standardHardware(cfg: EnclosureConfig): HardwarePlacement[] {
   const { panels } = layoutEnclosure(cfg);
   const out: HardwarePlacement[] = [];
   const half = cfg.thickness === '1/2"';
+  const hinge = HINGE_TYPES.find((h) => h.id === (hw?.hingeType || 'wall-geneva')) || HINGE_TYPES[0];
+  const clampT = CLAMP_TYPES.find((c) => c.id === (hw?.clampType || 'glass-wall')) || CLAMP_TYPES[0];
+  // A corner-return / neo-angle has a real 90° glass-to-glass joint on the return.
+  const cornerJoint = cfg.style === 'corner-return' || cfg.style === 'neo-angle';
   panels.forEach((p, idx) => {
     const H = Math.max(1, p.hLeft || cfg.heightIn || 76);
     const W = Math.max(1, p.wTop || 24);
     if (p.kind === 'door') {
       const three = half || H >= HW_STD.tallDoorIn;
-      out.push({ id: `hg-${idx}-t`, kind: 'hinge', label: 'Top hinge', panel: 'door', panelIndex: idx, fromTopIn: HW_STD.hingeInsetFromEndIn, fromEdgeIn: 0 });
-      if (three) out.push({ id: `hg-${idx}-m`, kind: 'hinge', label: 'Center hinge', panel: 'door', panelIndex: idx, fromTopIn: round16(H / 2), fromEdgeIn: 0 });
-      out.push({ id: `hg-${idx}-b`, kind: 'hinge', label: 'Bottom hinge', panel: 'door', panelIndex: idx, fromTopIn: round16(Math.max(1, H - HW_STD.hingeInsetFromEndIn)), fromEdgeIn: 0 });
-      // Back-to-back handle: two holes, centered at handle height, CTC apart.
+      // Hinges clamp the door edge — no door cutout (fab 'none'), mount per hinge type.
+      const hy = [HW_STD.hingeInsetFromEndIn, ...(three ? [round16(H / 2)] : []), round16(Math.max(1, H - HW_STD.hingeInsetFromEndIn))];
+      const hlabel = ['Top hinge', ...(three ? ['Center hinge'] : []), 'Bottom hinge'];
+      hy.forEach((t, k) => out.push({ id: `hg-${idx}-${k}`, kind: 'hinge', label: hlabel[k], panel: 'door', panelIndex: idx, fromTopIn: t, fromEdgeIn: 0, fab: 'none', mount: hinge.mount }));
+      // Back-to-back handle: two DRILLED holes, centered at handle height, CTC apart.
       const hCenter = round16(Math.max(1, H - (hw?.handleHeightIn ?? 40)));
       const ctc = hw?.handleCtcIn ?? 6;
       const edge = round16(Math.max(0, W - HW_STD.handleFromLatchEdgeIn));
-      out.push({ id: `hn-${idx}-u`, kind: 'handle', label: 'Handle hole (upper)', panel: 'door', panelIndex: idx, fromTopIn: round16(Math.max(1, hCenter - ctc / 2)), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn });
-      out.push({ id: `hn-${idx}-l`, kind: 'handle', label: 'Handle hole (lower)', panel: 'door', panelIndex: idx, fromTopIn: round16(hCenter + ctc / 2), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn });
+      out.push({ id: `hn-${idx}-u`, kind: 'handle', label: 'Handle hole (upper)', panel: 'door', panelIndex: idx, fromTopIn: round16(Math.max(1, hCenter - ctc / 2)), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn, fab: 'hole', mount: 'drilled' });
+      out.push({ id: `hn-${idx}-l`, kind: 'handle', label: 'Handle hole (lower)', panel: 'door', panelIndex: idx, fromTopIn: round16(hCenter + ctc / 2), fromEdgeIn: edge, diaIn: HW_STD.holeDiaIn, fab: 'hole', mount: 'drilled' });
     } else if (p.kind === 'panel' || p.kind === 'return') {
+      // A glass-to-glass hinge notches the FIXED panel on the door side at each hinge.
+      if (hinge.panelFab === 'notch' && idx > 0 && panels[idx - 1]?.kind === 'door') {
+        const three = half || H >= HW_STD.tallDoorIn;
+        const ny = [HW_STD.hingeInsetFromEndIn, ...(three ? [round16(H / 2)] : []), round16(Math.max(1, H - HW_STD.hingeInsetFromEndIn))];
+        ny.forEach((t, k) => out.push({ id: `nt-${idx}-${k}`, kind: 'clamp', label: `Hinge notch ${k + 1} (glass-to-glass)`, panel: p.kind, panelIndex: idx, fromTopIn: t, fromEdgeIn: 0, fab: 'notch', mount: 'glass-to-glass hinge' }));
+      }
+      // Panel clamps grip the edge — no cutout. The return of a corner style uses a
+      // 90° corner clamp; otherwise the enclosure's chosen clamp type.
+      const mount = p.kind === 'return' && cornerJoint ? '90° corner' : clampT.id === 'corner-90' ? '90° corner' : clampT.id === 'glass-glass-180' ? 'glass-to-glass' : 'wall-mount';
       const n = Math.max(2, Math.min(3, hw?.clampsPerJoint ?? 2));
       for (let i = 0; i < n; i++) {
         const t = HW_STD.clampInsetFromEndIn + (i * (H - 2 * HW_STD.clampInsetFromEndIn)) / (n - 1);
-        out.push({ id: `cl-${idx}-${i}`, kind: 'clamp', label: `${p.label} clamp ${i + 1}`, panel: p.kind, panelIndex: idx, fromTopIn: round16(t), fromEdgeIn: 0 });
+        out.push({ id: `cl-${idx}-${i}`, kind: 'clamp', label: `${p.label} clamp ${i + 1}`, panel: p.kind, panelIndex: idx, fromTopIn: round16(t), fromEdgeIn: 0, fab: 'none', mount });
       }
     }
   });
@@ -276,12 +290,32 @@ export function resolveHardware(cfg: EnclosureConfig): HardwarePlacement[] {
   return standardHardware(cfg);
 }
 
-/** Hole / hinge / clamp positions as order-sheet rows. */
+/** The fabrication requirement for one placement, in plain shop language. */
+export function fabNote(h: HardwarePlacement): string {
+  if (h.fab === 'hole') return `drill ⌀ ${formatDim(h.diaIn || 0.5).replace(/^0 /, '')}`;
+  if (h.fab === 'notch') return `notch — ${h.mount || 'glass-to-glass'}`;
+  return `no cutout${h.mount ? ` · ${h.mount}` : ''}`;
+}
+
+/** Hole / hinge / clamp positions + fabrication requirement as order-sheet rows. */
 export function hardwareRows(cfg: EnclosureConfig): { label: string; size: string }[] {
   return resolveHardware(cfg).map((h) => ({
     label: h.label,
-    size: `${formatDim(h.fromTopIn)} from top · ${formatDim(h.fromEdgeIn)} from edge${h.diaIn ? ` · ⌀ ${formatDim(h.diaIn)}` : ''}`,
+    size: `${formatDim(h.fromTopIn)} from top · ${formatDim(h.fromEdgeIn)} from edge · ${fabNote(h)}`,
   }));
+}
+
+/** Short summary of what actually needs glass fabrication (drilled/notched)
+ *  vs. edge-clamp only — for the shop order header. */
+export function fabSummary(cfg: EnclosureConfig): string {
+  const places = resolveHardware(cfg);
+  const holes = places.filter((p) => p.fab === 'hole').length;
+  const notches = places.filter((p) => p.fab === 'notch').length;
+  const parts: string[] = [];
+  if (holes) parts.push(`${holes} drilled hole${holes > 1 ? 's' : ''}`);
+  if (notches) parts.push(`${notches} notch${notches > 1 ? 'es' : ''}`);
+  if (!parts.length) return 'No glass cutouts — all hardware is edge/surface clamp';
+  return `Glass fabrication: ${parts.join(', ')} (all other hardware is edge clamp — no cutout)`;
 }
 
 // ---- Top-down plan (footprint) ----

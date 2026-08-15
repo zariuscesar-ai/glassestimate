@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL, POPULAR_MODELS, DEFAULT_HARDWARE, POPULAR_DOOR_WIDTHS, POPULAR_DOOR_HEIGHTS, HANDLE_TYPES, TOWEL_BAR_TYPES } from "@/lib/shower/types";
+import { SHOWER_STYLES, GLASS_TYPES, THICKNESSES, FINISHES, DEFAULT_DEDUCTIONS, DOOR_TYPES, STANDARD_SIZES, DEFAULT_PONY_WALL, POPULAR_MODELS, DEFAULT_HARDWARE, POPULAR_DOOR_WIDTHS, POPULAR_DOOR_HEIGHTS, HANDLE_TYPES, TOWEL_BAR_TYPES, HINGE_TYPES, CLAMP_TYPES } from "@/lib/shower/types";
 import type { EnclosureConfig, ShowerStyle, GlassThickness, GlassType, Finish, RateTable, Deductions, Opening, DoorType, StandardSize, PonyWall, PopularModel, HardwareLayout, HardwarePlacement } from "@/lib/shower/types";
 import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatDim, parseInches, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows, slidingExtras } from "@/lib/shower/glass";
+import { layoutEnclosure, formatDim, parseInches, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows, slidingExtras, fabNote, fabSummary } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import SketchPad from "@/components/SketchPad";
 import type { SketchResult } from "@/lib/shower/sketch";
@@ -408,11 +408,20 @@ function Configurator() {
                     </label>
                     {e.hardware?.enabled && (
                       <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <SelectField label="Hinge type" value={e.hardware.hingeType || "wall-geneva"} onChange={(v) => setHardware(e.id, { hingeType: v })} options={HINGE_TYPES.map((h) => ({ value: h.id, label: h.name }))} />
+                          <SelectField label="Clamp type" value={e.hardware.clampType || "glass-wall"} onChange={(v) => setHardware(e.id, { clampType: v })} options={CLAMP_TYPES.map((c) => ({ value: c.id, label: c.name }))} />
+                        </div>
+                        <div className="text-[11px] text-slate-400 -mt-1 space-y-0.5">
+                          <div>🔩 {HINGE_TYPES.find((h) => h.id === (e.hardware!.hingeType || "wall-geneva"))?.note}</div>
+                          <div>🗜️ {CLAMP_TYPES.find((c) => c.id === (e.hardware!.clampType || "glass-wall"))?.note}</div>
+                        </div>
                         <div className="grid grid-cols-3 gap-2">
                           <FractionField label="Handle CTC" value={e.hardware.handleCtcIn} onChange={(v) => setHardware(e.id, { handleCtcIn: v })} step />
                           <FractionField label="Handle height (floor)" value={e.hardware.handleHeightIn} onChange={(v) => setHardware(e.id, { handleHeightIn: v })} />
                           <NumberField label="Clamps / panel" value={e.hardware.clampsPerJoint} onChange={(v) => setHardware(e.id, { clampsPerJoint: Math.max(2, Math.min(3, Math.round(v))) })} />
                         </div>
+                        <div className="rounded-md bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 text-[11px] text-emerald-800">🛠 {fabSummary(effCfg(e))}</div>
                         <label className="flex items-center gap-1.5 text-xs text-slate-600">
                           <input type="checkbox" checked={!e.hardware.useStandard} onChange={(ev) => customizeHardware(e.id, ev.target.checked)} className="accent-emerald-600" />
                           Customize hole &amp; clamp positions
@@ -424,7 +433,7 @@ function Configurator() {
                                 {resolveHardware(effCfg(e)).map((h, hi) => (
                                   <div key={hi} className="flex items-center justify-between gap-2">
                                     <span className="text-slate-600 whitespace-nowrap">{h.label}</span>
-                                    <span className="text-slate-400 whitespace-nowrap">{formatDim(h.fromTopIn)} top · {formatDim(h.fromEdgeIn)} edge</span>
+                                    <span className="whitespace-nowrap"><span className="text-slate-400">{formatDim(h.fromTopIn)} top · {formatDim(h.fromEdgeIn)} edge</span> <span className={h.fab === "hole" ? "text-amber-600" : h.fab === "notch" ? "text-rose-600" : "text-slate-400"}>· {fabNote(h)}</span></span>
                                   </div>
                                 ))}
                               </div>
@@ -446,7 +455,7 @@ function Configurator() {
                           </div>
                           <HardwareMap cfg={effCfg(e)} />
                         </div>
-                        <p className="text-[11px] text-slate-400">Standard positions follow common CRL install spacing. <span className="text-teal-700">●</span> hinge <span className="text-amber-600">●</span> handle <span className="text-violet-600">●</span> clamp. Positions print on the shop order below.</p>
+                        <p className="text-[11px] text-slate-400">Positions follow common CRL install spacing. <span className="text-teal-700">▮</span> hinge (edge, no cutout) · <span className="text-amber-600">◯</span> drilled hole · <span className="text-rose-600">▣</span> notch · <span className="text-violet-600">▮</span> clamp (edge). Positions &amp; fabrication print on the shop order.</p>
                       </div>
                     )}
                   </div>
@@ -629,7 +638,6 @@ function HardwareMap({ cfg }: { cfg: EnclosureConfig }) {
   const W = totalW * scale + pad * 2, H = maxH * scale + pad * 2;
   let cursor = 0;
   const offs = panels.map((p) => { const o = cursor; cursor += Math.max(p.wTop, p.wBottom); return o; });
-  const color = (k: HardwarePlacement["kind"]) => (k === "hinge" ? "#0f766e" : k === "handle" ? "#d97706" : k === "clamp" ? "#7c3aed" : "#64748b");
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="120" style={{ display: "block", flex: "none" }} role="img" aria-label="Hardware positions">
       {panels.map((p, i) => {
@@ -639,9 +647,15 @@ function HardwareMap({ cfg }: { cfg: EnclosureConfig }) {
         return (
           <g key={i}>
             <rect x={px} y={pad} width={pw} height={ph} fill="#eef6f7" stroke="#94a3b8" strokeWidth={1} />
-            {places.filter((pl) => (pl.panelIndex ?? -1) === i).map((pl, j) => (
-              <circle key={j} cx={px + Math.min(pw, pl.fromEdgeIn * scale)} cy={pad + Math.min(ph, pl.fromTopIn * scale)} r={2.6} fill={color(pl.kind)} />
-            ))}
+            {places.filter((pl) => (pl.panelIndex ?? -1) === i).map((pl, j) => {
+              const cx = px + Math.min(pw, pl.fromEdgeIn * scale);
+              const cy = pad + Math.min(ph, pl.fromTopIn * scale);
+              // Drilled hole → amber ring; notch → rose square; edge clamp/hinge → tick on the glass edge.
+              if (pl.fab === "hole") return <circle key={j} cx={cx} cy={cy} r={2.8} fill="none" stroke="#d97706" strokeWidth={1.4} />;
+              if (pl.fab === "notch") return <rect key={j} x={cx - 2.4} y={cy - 2.4} width={4.8} height={4.8} fill="#e11d48" fillOpacity={0.85} />;
+              const edgeColor = pl.kind === "hinge" ? "#0f766e" : "#7c3aed";
+              return <rect key={j} x={cx - 0.8} y={cy - 3} width={2.4} height={6} rx={0.6} fill={edgeColor} />;
+            })}
           </g>
         );
       })}

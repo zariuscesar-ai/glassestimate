@@ -6,7 +6,7 @@ import { SHOWER_STYLES, FINISHES, HANDLE_TYPES, TOWEL_BAR_TYPES } from "@/lib/sh
 import type { EnclosureConfig, RateTable } from "@/lib/shower/types";
 import { priceEnclosure } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
-import { layoutEnclosure, formatDim, panelSizeLabel, planIsInformative, ponyWallRows, hardwareRows, slidingExtras, type GlassPanel } from "@/lib/shower/glass";
+import { layoutEnclosure, formatDim, panelSizeLabel, planIsInformative, ponyWallRows, hardwareRows, slidingExtras, fabSummary, type GlassPanel } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
 import ShowerPlan from "@/components/ShowerPlan";
 
@@ -64,7 +64,7 @@ function orderText(est: Est, company: Company | null): string {
     slidingExtras(c).forEach((r) => L.push(`   ${r.label}: ${r.size}`));
     ponyWallRows(c).forEach((r) => L.push(`   ${r.label}: ${r.size}`));
     const hwr = hardwareRows(c);
-    if (hwr.length) { L.push(`   Hardware holes & clamps:`); hwr.forEach((r) => L.push(`     ${r.label}: ${r.size}`)); }
+    if (hwr.length) { L.push(`   Hardware — ${fabSummary(c)}:`); hwr.forEach((r) => L.push(`     ${r.label}: ${r.size}`)); }
     const cs = cutoutSummary(c);
     if (cs) L.push(`   Cutouts/hardware: ${cs}`);
     L.push("");

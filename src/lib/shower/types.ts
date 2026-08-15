@@ -237,6 +237,12 @@ export const POPULAR_MODELS: PopularModel[] = [
 // lets the dealer drag each hole/clamp to an exact measured position.
 export type HardwareKind = 'hinge' | 'handle' | 'clamp' | 'towel-bar' | 'hole';
 
+// What the shop has to fabricate on the glass for a piece of hardware:
+//  'none'  — edge/surface clamp, no glass work (most hinges & clamps)
+//  'hole'  — a drilled hole (back-to-back handles/knobs)
+//  'notch' — a corner/edge notch (glass-to-glass hinge on a fixed panel, curb/pony)
+export type FabKind = 'none' | 'hole' | 'notch';
+
 export interface HardwarePlacement {
   id: string;
   kind: HardwareKind;
@@ -246,6 +252,8 @@ export interface HardwarePlacement {
   fromTopIn: number;     // vertical center, from the top edge of the glass
   fromEdgeIn: number;    // horizontal center, from the near vertical edge
   diaIn?: number;        // hole diameter (holes / handles)
+  fab?: FabKind;         // glass fabrication required (default 'none')
+  mount?: string;        // mounting note (e.g. 'wall-mount', '90° corner')
 }
 
 export interface HardwareLayout {
@@ -254,11 +262,14 @@ export interface HardwareLayout {
   handleCtcIn: number;      // back-to-back handle center-to-center
   handleHeightIn: number;   // handle center height from the floor
   clampsPerJoint: number;   // clamps per fixed-panel edge (2 or 3)
+  hingeType?: string;       // HINGE_TYPES id
+  clampType?: string;       // CLAMP_TYPES id
   placements: HardwarePlacement[]; // edited/custom placements
 }
 
 export const DEFAULT_HARDWARE: HardwareLayout = {
-  enabled: true, useStandard: true, handleCtcIn: 6, handleHeightIn: 40, clampsPerJoint: 2, placements: [],
+  enabled: true, useStandard: true, handleCtcIn: 6, handleHeightIn: 40, clampsPerJoint: 2,
+  hingeType: 'wall-geneva', clampType: 'glass-wall', placements: [],
 };
 
 // Standard frameless placement rules (inches) — editable defaults per shop,
@@ -300,6 +311,27 @@ export const TOWEL_BAR_TYPES: TowelBarOption[] = [
   { id: 'tb-18', name: 'Towel bar 18"', lengthIn: 18 },
   { id: 'tb-24', name: 'Towel bar 24"', lengthIn: 24 },
   { id: 'tb-30', name: 'Towel bar 30"', lengthIn: 30 },
+];
+
+// ---- Hinges & clamps: mounting + glass-fabrication requirements ----
+// Real frameless hinges/clamps grip the glass edge with gaskets, so the DOOR/
+// PANEL usually needs NO cutout — only a position. The exceptions are glass-to-
+// glass hinges (the fixed panel may need a small notch) and back-to-back handles
+// (drilled holes). These catalogs carry the mount + whether fabrication is needed.
+export interface HingeOption { id: string; name: string; mount: string; panelFab: FabKind; note: string; }
+export const HINGE_TYPES: HingeOption[] = [
+  { id: 'wall-geneva', name: 'Wall-mount (Geneva-style)', mount: 'glass-to-wall', panelFab: 'none', note: 'No door cutout — clamps the door edge, screws to the wall' },
+  { id: 'wall-square', name: 'Wall-mount (square / Pinnacle-style)', mount: 'glass-to-wall', panelFab: 'none', note: 'No door cutout — edge clamp to the wall' },
+  { id: 'glass-glass', name: 'Glass-to-glass hinge', mount: 'glass-to-glass', panelFab: 'notch', note: 'No door cutout; the fixed panel takes a small notch at each hinge' },
+  { id: 'offset', name: 'Offset / U-clamp hinge', mount: 'glass-to-wall', panelFab: 'none', note: 'No door cutout — U-clamp on the door edge' },
+];
+
+// Clamp mounting for fixed panels. All grip the glass edge → no cutout.
+export interface ClampOption { id: string; name: string; note: string; }
+export const CLAMP_TYPES: ClampOption[] = [
+  { id: 'glass-wall', name: 'Wall-mount clamp', note: 'No cutout — clamps the panel edge, screws to the wall' },
+  { id: 'glass-glass-180', name: 'Glass-to-glass (180°)', note: 'No cutout — joins two in-line panels edge to edge' },
+  { id: 'corner-90', name: '90° corner glass-to-glass', note: 'No cutout — joins two panels at a 90° corner' },
 ];
 
 export interface RateTable {
