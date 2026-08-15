@@ -47,6 +47,31 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 const dist = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
 function fmtFt(n: number) { const f = Math.floor(n); const inch = Math.round((n - f) * 12); return inch ? `${f}'-${inch}"` : `${f}'-0"`; }
 
+// Glass pieces (cut list) for one wall run — mirrors the bay layout the render
+// uses, returned in feet. Each entry is a distinct panel/leaf with qty + size,
+// ready for a production/cut sheet.
+type GlassPiece = { label: string; w: number; h: number; qty: number };
+function wallGlass(run: Run, wFt: number, hFt: number): GlassPiece[] {
+  const door = DOORS[run.door]; const hasDoor = door.leaves > 0;
+  const bodyH = run.transom ? Math.max(0.1, hFt - run.transomFt) : hFt;
+  const out: GlassPiece[] = [];
+  const doorW = hasDoor ? run.leafFt * door.leaves : 0;
+  const remain = Math.max(0, wFt - doorW);
+  if (!hasDoor) {
+    const n = Math.max(1, run.panels * (run.sidelites ? 2 : 1));
+    out.push({ label: 'Fixed panel', w: wFt / n, h: bodyH, qty: n });
+  } else {
+    let leftW = 0, rightW = 0;
+    if (run.doorPos === 'center') { leftW = remain / 2; rightW = remain / 2; }
+    else if (run.doorPos === 'left') { rightW = remain; } else { leftW = remain; }
+    if (leftW > 0.1) { const n = Math.max(1, run.panels); out.push({ label: 'Fixed panel (left)', w: leftW / n, h: bodyH, qty: n }); }
+    out.push({ label: `${door.name} leaf`, w: run.leafFt, h: bodyH, qty: door.leaves });
+    if (rightW > 0.1) { const n = Math.max(1, run.panels); out.push({ label: 'Fixed panel (right)', w: rightW / n, h: bodyH, qty: n }); }
+  }
+  if (run.transom && run.transomFt > 0.05) out.push({ label: 'Transom', w: wFt, h: run.transomFt, qty: 1 });
+  return out;
+}
+
 function drawAssembly(ctx: CanvasRenderingContext2D, ox: number, oy: number, W: number, H: number, transparentGlass: boolean, run: Run, wFt: number, hFt: number) {
   const sys = SYSTEMS[run.system], fin = FINISHES[run.finish];
   const ftToPx = W / wFt;
@@ -393,6 +418,29 @@ export default function VisualEstimatorPage() {
   const labor = area * laborPsf; const sub = glass + doorAdd + labor; const tax = sub * taxPct / 100; const total = sub + tax;
   const usedSystems = Array.from(new Set(runs.map(r => r.system)));
 
+  // Per-wall glass cut list (the "send to production" breakdown).
+  const cutList = runs.map((r, i) => ({ i, run: r, wFt: runLen(i), pieces: wallGlass(r, runLen(i), heightFt) }));
+  const totalPieces = cutList.reduce((s, w) => s + w.pieces.reduce((a, p) => a + p.qty, 0), 0);
+  const cutNote = cutList.map(w => `Wall ${w.i + 1} (${SYSTEMS[w.run.system].name}, ${FINISHES[w.run.finish].name}): ` + w.pieces.map(p => `${p.qty}× ${fmtFt(p.w)}×${fmtFt(p.h)} ${p.label}`).join('; ')).join('  |  ');
+
+  // Open a clean, printable production / cut sheet in a new tab.
+  const productionSheet = () => {
+    const rows = cutList.map(w => {
+      const head = `<tr><td colspan="4" style="background:#0e2a4a;color:#fff;padding:6px 8px;font-weight:600">Wall ${w.i + 1} — ${SYSTEMS[w.run.system].name} · ${FINISHES[w.run.finish].name} · ${SYSTEMS[w.run.system].note} · run ${fmtFt(w.wFt)}</td></tr>`;
+      const body = w.pieces.map(p => `<tr><td style="text-align:center">${p.qty}</td><td>${p.label}</td><td>${fmtFt(p.w)}</td><td>${fmtFt(p.h)}</td></tr>`).join('');
+      return head + body;
+    }).join('');
+    const html = `<!doctype html><meta charset="utf-8"><title>Production sheet — ${projectName || 'Glass enclosure'}</title>`
+      + `<style>body{font:13px -apple-system,Segoe UI,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 2px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}th{background:#f1f5f9}.muted{color:#64748b}.tot{margin-top:10px;font-weight:600}@media print{button{display:none}}</style>`
+      + `<div style="display:flex;justify-content:space-between;align-items:center"><div><h1>${projectName || 'Glass enclosure'}</h1><div class="muted">Production / Cut Sheet</div></div><button onclick="print()" style="padding:8px 14px;border:1px solid #0e2a4a;background:#0e2a4a;color:#fff;border-radius:8px;cursor:pointer">Print / Save PDF</button></div>`
+      + `<div class="muted" style="margin-top:6px">Height ${fmtFt(heightFt)} · ${runs.length} wall(s) · ${area.toFixed(0)} sq ft · ${totalPieces} pieces</div>`
+      + `<table><thead><tr><th style="width:48px;text-align:center">Qty</th><th>Piece</th><th style="width:90px">Width</th><th style="width:90px">Height</th></tr></thead><tbody>${rows}</tbody></table>`
+      + `<p class="muted">Sizes are nominal opening sizes — apply shop deductions before cutting. Confirm field measurements before fabrication.</p>`;
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); win.focus(); }
+    else alert('Allow pop-ups to open the production sheet.');
+  };
+
   const createEstimate = async () => {
     if (!clientId) { alert('Select a client first.'); return; }
     setSaving(true);
@@ -401,7 +449,7 @@ export default function VisualEstimatorPage() {
       runs.forEach((r, i) => { const L = runLen(i); const a = L * heightFt; items.push({ description: `Wall ${i + 1}: ${SYSTEMS[r.system].name} ${FINISHES[r.finish].name} — ${fmtFt(L)} × ${fmtFt(heightFt)} = ${a.toFixed(0)} sq ft`, quantity: Math.round(a * 10) / 10, unit_price: psfMap[r.system] ?? SYSTEMS[r.system].psf }); if (DOORS[r.door].leaves > 0) items.push({ description: `Wall ${i + 1}: ${DOORS[r.door].name}${r.transom ? ' + transom' : ''}${r.sidelites ? ' + sidelites' : ''}`, quantity: 1, unit_price: DOORS[r.door].adder }); });
       items.push({ description: 'Installation labor', quantity: Math.round(area * 10) / 10, unit_price: laborPsf });
       const today = new Date().toISOString().split('T')[0]; const due = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
-      const res = await fetch('/api/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: parseInt(clientId), issue_date: today, due_date: due, type: 'estimate', items, tax_rate: taxPct, notes: `${projectName || 'Glass enclosure'} — ${runs.length} wall(s), ${area.toFixed(0)} sq ft. ${usedSystems.map(s => SYSTEMS[s].name).join(', ')}.`, terms: '50% deposit required. Estimate valid 30 days.' }) });
+      const res = await fetch('/api/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: parseInt(clientId), issue_date: today, due_date: due, type: 'estimate', items, tax_rate: taxPct, notes: `${projectName || 'Glass enclosure'} — ${runs.length} wall(s), ${area.toFixed(0)} sq ft. ${usedSystems.map(s => SYSTEMS[s].name).join(', ')}.\n\nGLASS CUT LIST (${totalPieces} pieces):\n${cutNote}`, terms: '50% deposit required. Estimate valid 30 days.' }) });
       if (!res.ok) { alert('Failed to create estimate'); return; }
       const inv = await res.json(); router.push(`/invoices/${inv.id}`);
     } catch { alert('Error'); } finally { setSaving(false); }
@@ -448,10 +496,19 @@ export default function VisualEstimatorPage() {
               {runs.map((r, i) => <button key={i} onClick={() => { setSel(i); if (view === 'plan') setView('elev'); }} className={seg(sel === i)} style={{ borderLeft: `3px solid ${SYSTEMS[r.system].color}` }}>Wall {i + 1}</button>)}
               {runs.length > 1 && <button onClick={() => { setRuns(rs => rs.filter((_, i) => i !== sel)); setPts(ps => ps.filter((_, i) => i !== sel + 1)); setSel(0); }} className="px-2 py-1.5 rounded text-[11px] text-red-500 border border-slate-200">✕</button>}
             </div>
-            {runs.length > 0 && <>
-              <label className="text-[11px] text-slate-500">Wall {sel + 1} length (ft)</label>
-              <input type="number" className="input text-sm" value={Math.round(runLen(sel) * 10) / 10} step={0.5} onChange={e => setRunLen(sel, +e.target.value || 1)} />
-            </>}
+            {runs.length > 0 && (
+              <div className="border-t border-slate-100 pt-2 space-y-1">
+                <label className="text-[11px] text-slate-500">Measurements — each line (ft)</label>
+                {runs.map((r, i) => (
+                  <div key={i} className={`flex items-center gap-2 rounded px-1 ${sel === i ? 'bg-navy-50' : ''}`}>
+                    <button onClick={() => setSel(i)} className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: SYSTEMS[r.system].color }} title={`Select wall ${i + 1}`} />
+                    <span className="text-[11px] text-slate-600 w-12 flex-none">Wall {i + 1}</span>
+                    <input type="number" className="input text-xs py-1 flex-1" value={Math.round(runLen(i) * 10) / 10} step={0.5} onChange={e => setRunLen(i, +e.target.value || 1)} />
+                  </div>
+                ))}
+                <p className="text-[10px] text-slate-400">Type an exact length or drag a corner on the plan — the render &amp; cut list update live.</p>
+              </div>
+            )}
           </div>
 
           <div className="card p-3">
@@ -524,6 +581,35 @@ export default function VisualEstimatorPage() {
             </div>
           </div>
           <button onClick={createEstimate} disabled={saving || !clientId} className="btn-primary w-full">{saving ? 'Creating...' : '📋 Create Estimate'}</button>
+
+          <div className="card p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold">Glass cut list</h2>
+              <button onClick={productionSheet} disabled={!runs.length} className="text-[11px] text-navy-700 font-medium hover:underline disabled:opacity-40">📄 Production sheet</button>
+            </div>
+            {cutList.length === 0 && <p className="text-[11px] text-slate-400">Draw or pick a shape to see the glass pieces.</p>}
+            <div className="space-y-2 max-h-72 overflow-auto pr-1">
+              {cutList.map(w => (
+                <div key={w.i}>
+                  <div className="text-[11px] font-semibold text-slate-700 pl-1.5" style={{ borderLeft: `3px solid ${SYSTEMS[w.run.system].color}` }}>Wall {w.i + 1} · {SYSTEMS[w.run.system].name} · {FINISHES[w.run.finish].name}</div>
+                  {w.pieces.map((p, j) => (
+                    <div key={j} className="flex justify-between text-[11px] pl-2.5">
+                      <span className="text-slate-500">{p.qty}× {p.label}</span>
+                      <span className="font-medium text-slate-800">{fmtFt(p.w)} × {fmtFt(p.h)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            {cutList.length > 0 && (
+              <div className="border-t border-slate-100 mt-2 pt-1 text-[11px]">
+                <div className="flex justify-between"><span className="text-slate-500">Total pieces</span><span className="font-semibold">{totalPieces}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Total glass</span><span className="font-semibold">{area.toFixed(0)} sq ft</span></div>
+                <p className="text-[10px] text-slate-400 mt-1">Cut sizes save into the estimate &amp; the production sheet. Nominal opening sizes — apply shop deductions before cutting.</p>
+              </div>
+            )}
+          </div>
+
           <div className="card p-3">
             <h2 className="text-sm font-semibold mb-2">Pricing (editable)</h2>
             {usedSystems.map(s => <div key={s} className="mb-1"><label className="text-[11px] text-slate-500">{SYSTEMS[s].name} $/sf</label><input type="number" className="input text-sm" value={psfMap[s]} onChange={e => setPsfMap(m => ({ ...m, [s]: +e.target.value || 0 }))} /></div>)}
