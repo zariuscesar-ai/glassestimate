@@ -7,6 +7,8 @@ import { priceProject } from "@/lib/shower/pricing";
 import { DEFAULT_SHOWER_RATES } from "@/lib/shower/rates";
 import { layoutEnclosure, formatDim, parseInches, panelSizeLabel, defaultOpenings, suggestThickness, ponyWallRows, resolveHardware, standardHardware, hardwareRows, slidingExtras } from "@/lib/shower/glass";
 import ShowerDrawing from "@/components/ShowerDrawing";
+import SketchPad from "@/components/SketchPad";
+import type { SketchResult } from "@/lib/shower/sketch";
 import ShowerPlan from "@/components/ShowerPlan";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -42,6 +44,7 @@ function Configurator() {
   const [deductions, setDeductions] = useState<Deductions>(DEFAULT_DEDUCTIONS);
   const [showGaps, setShowGaps] = useState(false);
   const [planView, setPlanView] = useState(false);
+  const [sketchFor, setSketchFor] = useState<string | null>(null);
   const [companySlug, setCompanySlug] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
   const params = useSearchParams();
@@ -175,6 +178,12 @@ function Configurator() {
     if (widthsIn[di] != null) widthsIn[di] = m.widthIn;
     return { ...e, style: m.style, doorType: m.doorType, widthsIn, heightIn: m.heightIn, thickness: m.thickness, finish: m.finish, openingWidthIn: m.widthIn, openingHeightIn: m.heightIn + 2 };
   }));
+  // Apply a finger-sketch result: set the detected style + proportional wall
+  // widths. Height and the rest stay as they are for the dealer to fine-tune.
+  const applySketch = (id: string, r: SketchResult) => {
+    setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, style: r.style, widthsIn: [...r.widthsIn] } : e)));
+    setSketchFor(null);
+  };
 
   // ---- Hardware layout (holes / hinges / clamps) ----
   const toggleHardware = (id: string, on: boolean) => setEnclosures((l) => l.map((e) => (e.id === id ? { ...e, hardware: on ? { ...(e.hardware || DEFAULT_HARDWARE), enabled: true } : (e.hardware ? { ...e.hardware, enabled: false } : undefined) } : e)));
@@ -277,6 +286,16 @@ function Configurator() {
 
               <div className="p-5 grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">Sketch the opening <span className="normal-case font-normal text-emerald-600">— draw it, we build it</span></label>
+                      <button type="button" onClick={() => setSketchFor(sketchFor === e.id ? null : e.id)}
+                        className={"text-xs rounded-lg border px-2.5 py-1 " + (sketchFor === e.id ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50")}>
+                        {sketchFor === e.id ? "Hide" : "✏️ Sketch"}
+                      </button>
+                    </div>
+                    {sketchFor === e.id && <SketchPad onApply={(r) => applySketch(e.id, r)} onClose={() => setSketchFor(null)} />}
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Popular models <span className="normal-case font-normal text-slate-400">— quick start, fully editable</span></label>
                     <div className="flex flex-wrap gap-1.5">
