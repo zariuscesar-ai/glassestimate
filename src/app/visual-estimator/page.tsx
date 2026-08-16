@@ -163,6 +163,77 @@ function drawAssembly(ctx: CanvasRenderingContext2D, ox: number, oy: number, W: 
   ctx.textAlign = 'start';
 }
 
+// Multi-wall elevation sheet: draw EVERY wall's elevation together on one shared
+// scale, so a job with several glass walls — standalone or a connected run —
+// reads like a proper shop elevation page (Wall 1, Wall 2, …). Tiles flow across
+// rows, auto-scaled to fit; the selected wall is ringed. widthsFt[i] is the
+// finished width of wall i in feet.
+function drawElevationSheet(ctx: CanvasRenderingContext2D, cw: number, ch: number, widthsFt: number[], runs: Run[], hFt: number, sel: number, title: string) {
+  const g = ctx.createLinearGradient(0, 0, 0, ch);
+  g.addColorStop(0, '#1a2740'); g.addColorStop(0.7, '#131f34'); g.addColorStop(0.7, '#0e1828'); g.addColorStop(1, '#0a1220');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch);
+
+  const margin = 28, gap = 26, labelH = 22, dimH = 26, titleH = 34;
+  const availW = cw - margin * 2;
+  const availTop = titleH + 4, availH = ch - availTop - margin;
+  const asps = widthsFt.map(w => Math.max(0.2, (w || 1) / hFt));   // width/height per wall
+  const maxAsp = Math.max(0.2, ...asps);
+
+  // Pack tiles of uniform height Hpx into rows that fit availW.
+  const packRows = (Hpx: number) => {
+    const tileW = asps.map(a => Hpx * a);
+    const rows: number[][] = []; let cur: number[] = []; let acc = 0;
+    for (let i = 0; i < tileW.length; i++) {
+      const w = tileW[i];
+      if (cur.length && acc + gap + w > availW) { rows.push(cur); cur = []; acc = 0; }
+      cur.push(i); acc += (cur.length > 1 ? gap : 0) + w;
+    }
+    if (cur.length) rows.push(cur);
+    return rows;
+  };
+  // Largest tile height whose packed rows still fit vertically and per-tile width fits.
+  let lo = 24, hi = availH, Hpx = lo;
+  for (let it = 0; it < 26; it++) {
+    const mid = (lo + hi) / 2;
+    const rows = packRows(mid);
+    const totalH = rows.length * (mid + labelH + dimH) + (rows.length - 1) * gap;
+    if (totalH <= availH && mid * maxAsp <= availW) { Hpx = mid; lo = mid; } else hi = mid;
+  }
+  const rows = packRows(Hpx);
+  const blockH = Hpx + labelH + dimH;
+  const totalH = rows.length * blockH + (rows.length - 1) * gap;
+  let y = availTop + Math.max(0, (availH - totalH) / 2);
+
+  ctx.fillStyle = '#e6edf8'; ctx.font = '600 15px -apple-system,sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(`${title || 'Elevations'} — ${runs.length} wall${runs.length > 1 ? 's' : ''} · ${fmtFt(hFt)} ceiling`, margin, 22);
+
+  for (const row of rows) {
+    const rowW = row.reduce((s, i) => s + Hpx * asps[i], 0) + gap * (row.length - 1);
+    let x = (cw - rowW) / 2;
+    const top = y + labelH;
+    for (const i of row) {
+      const wpx = Hpx * asps[i]; const run = runs[i]; const wFt = widthsFt[i]; const sys = SYSTEMS[run.system];
+      // colour chip + label
+      ctx.fillStyle = sys.color; ctx.fillRect(x, y + 3, 12, 6);
+      ctx.fillStyle = i === sel ? '#dbe7ff' : '#9fb0cc'; ctx.font = '600 12px -apple-system,sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(`Wall ${i + 1} · ${sys.name}`, x + 18, y + 13);
+      // floor shadow + the elevation itself
+      ctx.save(); ctx.filter = 'blur(6px)'; ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x + 6, top + Hpx - 4, wpx, 12); ctx.restore();
+      drawAssembly(ctx, x, top, wpx, Hpx, false, run, wFt, hFt);
+      if (i === sel) { ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; roundRect(ctx, x - 5, top - 5, wpx + 10, Hpx + 10, 8); ctx.stroke(); }
+      // width dimension under the tile
+      const dy = top + Hpx + 14;
+      ctx.strokeStyle = '#5b6b86'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, dy); ctx.lineTo(x + wpx, dy); ctx.moveTo(x, dy - 4); ctx.lineTo(x, dy + 4); ctx.moveTo(x + wpx, dy - 4); ctx.lineTo(x + wpx, dy + 4); ctx.stroke();
+      ctx.fillStyle = '#c3cee1'; ctx.font = '600 11px -apple-system,sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(fmtFt(wFt), x + wpx / 2, dy + 15);
+      x += wpx + gap;
+    }
+    y += blockH + gap;
+  }
+  ctx.textAlign = 'left';
+}
+
 function planTransform(pts: Pt[], cw: number, ch: number) {
   const pad = 70; const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
   const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
@@ -298,6 +369,7 @@ export default function VisualEstimatorPage() {
   const [runs, setRuns] = useState<Run[]>(preset('flat').runs);
   const [sel, setSel] = useState(0);
   const [view, setView] = useState<'plan' | 'elev' | 'photo'>('plan');
+  const [elevSheet, setElevSheet] = useState(true);   // elevation view: all-walls sheet vs. single selected wall
   const [drawMode, setDrawMode] = useState(false);
   const [photo, setPhoto] = useState<HTMLImageElement | null>(null);
   const [corners, setCorners] = useState<Pt[] | null>(null);
@@ -355,6 +427,8 @@ export default function VisualEstimatorPage() {
       return;
     }
     if (view === 'plan') { drawPlan(ctx, cv.width, cv.height, pts, runs, sel, projectName, getPlanT(pts, cv.width, cv.height, drawMode), drawMode, drawMode && dragIdx == null ? hoverFt : null); return; }
+    // ELEVATION VIEW — a multi-wall elevation sheet when the job has several walls.
+    if (elevSheet && runs.length > 1) { drawElevationSheet(ctx, cv.width, cv.height, runs.map((_, i) => runLen(i)), runs, heightFt, sel, projectName); return; }
     const g = ctx.createLinearGradient(0, 0, 0, cv.height);
     g.addColorStop(0, '#1a2740'); g.addColorStop(0.7, '#131f34'); g.addColorStop(0.7, '#0e1828'); g.addColorStop(1, '#0a1220');
     ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -365,7 +439,7 @@ export default function VisualEstimatorPage() {
     ctx.save(); ctx.filter = 'blur(8px)'; ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(ox + 8, oy + H - 4, W, 14); ctx.restore();
     drawAssembly(ctx, ox, oy, W, H, false, run, wFt, heightFt);
     ctx.fillStyle = '#7f90ad'; ctx.font = '12px -apple-system,sans-serif'; ctx.fillText(`Wall ${sel + 1} of ${runs.length} — ${SYSTEMS[run.system].name}`, 18, 26);
-  }, [pts, runs, sel, view, photo, corners, placing, tmp, heightFt, projectName, drawMode, hoverFt, dragIdx]);
+  }, [pts, runs, sel, view, elevSheet, photo, corners, placing, tmp, heightFt, projectName, drawMode, hoverFt, dragIdx]);
 
   // Keep one wall (run) per drawn segment: N corners => N-1 walls. Runs carry
   // per-wall config, so we only add/trim to match the segment count.
@@ -561,6 +635,13 @@ export default function VisualEstimatorPage() {
             <button onClick={() => setView('elev')} className={`flex-1 py-2 rounded-lg text-sm border ${view === 'elev' ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-600 border-slate-200'}`}>Elevation render</button>
             <button onClick={() => { setView('photo'); if (photo && !corners) { setPlacing(true); setTmp([]); } }} className={`flex-1 py-2 rounded-lg text-sm border ${view === 'photo' ? 'bg-navy-900 text-white border-navy-900' : 'bg-white text-slate-600 border-slate-200'}`}>On site photo</button>
           </div>
+          {view === 'elev' && runs.length > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-500">Show:</span>
+              <button onClick={() => setElevSheet(true)} className={seg(elevSheet)}>▦ All walls (elevation sheet)</button>
+              <button onClick={() => setElevSheet(false)} className={seg(!elevSheet)}>◳ Wall {sel + 1} only</button>
+            </div>
+          )}
           <div className="card overflow-hidden border-2 border-slate-200 relative">
             <canvas ref={cvRef} width={1000} height={720} style={{ touchAction: 'none' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerLeave={onCanvasLeave} className="w-full block" />
             {placing && <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-navy-900/90 text-white text-xs px-4 py-2 rounded-full pointer-events-none text-center">Tap the 4 corners of Wall {sel + 1}: TL → TR → BR → BL</div>}
