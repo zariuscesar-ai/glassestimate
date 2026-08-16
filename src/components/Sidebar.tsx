@@ -51,7 +51,7 @@ export default function Sidebar() {
     { href: '/products', label: 'Products', icon: '📦' },
     { href: '/invoices', label: 'Invoices', icon: '📄' },
     { href: '/estimates', label: 'Estimates', icon: '📋' },
-    { href: '/jobs', label: 'Jobs', icon: '🔧' },
+    { href: '/jobs', label: 'Projects', icon: '🔧' },
     { href: '/payments', label: 'Payments', icon: '💰' },
     { href: '/visual-estimator', label: 'Visual Estimator', icon: '🎨' },
     { href: '/showers', label: 'Shower Estimator', icon: '🚿' },
