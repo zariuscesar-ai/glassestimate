@@ -32,7 +32,7 @@ export default function EstimatesPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Estimates</h1>
         <div className="flex gap-2">
-          <Link href="/visual-estimator" className="btn-secondary btn-sm">🎨 Visual Estimator</Link>
+          <Link href="/visual-estimator" className="btn-secondary btn-sm">🎨 Flat Glass Estimator</Link>
           <Link href="/estimates/new" className="btn-primary">+ New Estimate</Link>
         </div>
       </div>
@@ -40,7 +40,7 @@ export default function EstimatesPage() {
         <div className="card text-center py-12">
           <p className="text-slate-500 mb-4">No estimates yet.</p>
           <div className="flex gap-3 justify-center">
-            <Link href="/visual-estimator" className="btn-primary btn-sm">Create with Visual Estimator</Link>
+            <Link href="/visual-estimator" className="btn-primary btn-sm">Create with Flat Glass Estimator</Link>
             <Link href="/estimates/new" className="btn-secondary btn-sm">Create manually</Link>
           </div>
         </div>

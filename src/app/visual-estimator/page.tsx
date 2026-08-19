@@ -539,8 +539,8 @@ export default function VisualEstimatorPage() {
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Visual Estimator</h1>
-          <p className="text-xs text-slate-500">Photo → dimensions → system → shape → realistic render → price. Close on site.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Flat Glass Estimator</h1>
+          <p className="text-xs text-slate-500">Visual estimator · photo → dimensions → system → shape → realistic render → price. Close on site.</p>
         </div>
       </div>
 
