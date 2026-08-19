@@ -146,6 +146,20 @@ export const STANDARD_SIZES: Record<DoorType, StandardSize[]> = {
     { label: '36" × 72"', widthIn: 36, heightIn: 72 },
     { label: '36" × 76"', widthIn: 36, heightIn: 76 },
     { label: '36" × 78"', widthIn: 36, heightIn: 78 },
+    // ---- InterGlass-spec standard doors (finished glass, ready to install):
+    // 3/8" clear tempered · wall-mount hinges 8" from top & bottom · 8" handle,
+    // 1/2" holes. Heights are the true glass sizes (nominal minus 3/8").
+    { label: '24" × 71⅝" · D-7224 · 8" handle', widthIn: 24, heightIn: 71.625 },
+    { label: '26" × 71⅝" · D-7226 · 8" handle', widthIn: 26, heightIn: 71.625 },
+    { label: '28" × 71⅝" · D-7228 · 8" handle', widthIn: 28, heightIn: 71.625 },
+    { label: '26" × 75⅝" · D-7626 · 8" handle', widthIn: 26, heightIn: 75.625 },
+    { label: '28" × 75⅝" · D-7628 · 8" handle', widthIn: 28, heightIn: 75.625 },
+    { label: '28" × 75⅝" · DH-7628 · heavy-duty hinge', widthIn: 28, heightIn: 75.625 },
+    { label: '26" × 79⅝" · D-8026 · 8" handle', widthIn: 26, heightIn: 79.625 },
+    { label: '28" × 79⅝" · D-8028 · 8" handle', widthIn: 28, heightIn: 79.625 },
+    { label: '28" × 79⅝" · DH-8028 · heavy-duty hinge', widthIn: 28, heightIn: 79.625 },
+    { label: '26" × 83⅝" · D-8426 · heavy-duty hinge', widthIn: 26, heightIn: 83.625 },
+    { label: '28" × 83⅝" · D-8428 · heavy-duty hinge', widthIn: 28, heightIn: 83.625 },
   ],
   pivot: [
     { label: '28" × 76"', widthIn: 28, heightIn: 76 },
@@ -228,6 +242,9 @@ export const POPULAR_MODELS: PopularModel[] = [
   { id: 'crescent-single-slider', name: 'Crescent-Style Single Slider', blurb: 'One sliding panel bypassing one fixed', doorType: 'single-slider', style: 'sliding-bypass', widthIn: 56, heightIn: 72, thickness: '3/8"', finish: 'chrome' },
   { id: 'barn-slider', name: 'Barn-Style Slider', blurb: 'Top-hung roller on an exposed track', doorType: 'barn', style: 'sliding-bypass', widthIn: 60, heightIn: 78, thickness: '3/8"', finish: 'matte-black' },
   { id: 'tub-slider', name: 'Tub Slider', blurb: 'Bypass doors over a bathtub', doorType: 'tub-slider', style: 'sliding-bypass', widthIn: 60, heightIn: 58, thickness: '3/8"', finish: 'chrome' },
+  // InterGlass-spec standard hinged door — 3/8" clear, wall-mount hinges 8" from
+  // top & bottom, 8" handle w/ 1/2" holes. Quick-start at a common catalog size.
+  { id: 'std-hinged-door', name: 'Standard Hinged Door', blurb: '3/8" clear · hinges 8" from top/bottom · 8" handle · pick the exact catalog size', doorType: 'hinged', style: 'single-door', widthIn: 26, heightIn: 75.625, thickness: '3/8"', finish: 'chrome' },
 ];
 
 // ---- Hardware layout: dealer-adjustable holes, hinges & clamps (additive) ----
