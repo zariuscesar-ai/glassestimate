@@ -3,13 +3,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 /* ============================ DATA ============================ */
-type Sys = { name: string; note: string; psf: number; frame: number; mull: number; glassTint: string; framed: boolean; color: string };
+// `ded` = glass deduction in inches subtracted from the opening on each dimension
+// (jamb-to-jamb and head-to-sill) to give the cut glass size. Editable per shop.
+type Sys = { name: string; note: string; psf: number; frame: number; mull: number; ded: number; glassTint: string; framed: boolean; color: string };
 const SYSTEMS: Record<string, Sys> = {
-  frameless:  { name: 'Frameless All-Glass', note: '1/2" glass', psf: 85,  frame: 0.06, mull: 0.06, glassTint: '#cfe6ea', framed: false, color: '#3b82f6' },
-  framed:     { name: 'Aluminum Framed',      note: '1/4" glass', psf: 55,  frame: 0.16, mull: 0.14, glassTint: '#d3e6ec', framed: true,  color: '#64748b' },
-  storefront: { name: 'Storefront',           note: '1" IGU',     psf: 95,  frame: 0.17, mull: 0.17, glassTint: '#cfe1ea', framed: true,  color: '#1e40af' },
-  floorceil:  { name: 'Floor-to-Ceiling',     note: 'demountable', psf: 75, frame: 0.22, mull: 0.20, glassTint: '#d6e8ee', framed: true,  color: '#7c3aed' },
-  curtain:    { name: 'Curtain Wall',         note: '2.5" system', psf: 120, frame: 0.25, mull: 0.22, glassTint: '#cadfe8', framed: true,  color: '#0891b2' },
+  frameless:  { name: 'Frameless All-Glass', note: '1/2" glass', psf: 85,  frame: 0.06, mull: 0.06, ded: 0.25, glassTint: '#cfe6ea', framed: false, color: '#3b82f6' },
+  framed:     { name: 'Aluminum Framed',      note: '1/4" glass', psf: 55,  frame: 0.16, mull: 0.14, ded: 0.5,  glassTint: '#d3e6ec', framed: true,  color: '#64748b' },
+  storefront: { name: 'Storefront',           note: '1" IGU',     psf: 95,  frame: 0.17, mull: 0.17, ded: 0.5,  glassTint: '#cfe1ea', framed: true,  color: '#1e40af' },
+  floorceil:  { name: 'Floor-to-Ceiling',     note: 'demountable', psf: 75, frame: 0.22, mull: 0.20, ded: 0.5,  glassTint: '#d6e8ee', framed: true,  color: '#7c3aed' },
+  curtain:    { name: 'Curtain Wall',         note: '2.5" system', psf: 120, frame: 0.25, mull: 0.22, ded: 0.625, glassTint: '#cadfe8', framed: true,  color: '#0891b2' },
 };
 type Fin = { name: string; face: string; edge: string; dark: string };
 const FINISHES: Record<string, Fin> = {
@@ -46,6 +48,15 @@ function shade(hex: string, p: number) { const c = hex.replace('#', ''); let r =
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 const dist = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
 function fmtFt(n: number) { const f = Math.floor(n); const inch = Math.round((n - f) * 12); return inch ? `${f}'-${inch}"` : `${f}'-0"`; }
+// Format inches with a fraction to the nearest 1/16 — e.g. 34.5 -> 34 1/2".
+function fmtIn(inches: number) {
+  if (!isFinite(inches) || inches <= 0) return '0"';
+  let whole = Math.floor(inches); let num = Math.round((inches - whole) * 16);
+  if (num === 16) { whole += 1; num = 0; }
+  if (num === 0) return `${whole}"`;
+  let den = 16; while (num % 2 === 0 && den > 1) { num /= 2; den /= 2; }
+  return whole > 0 ? `${whole} ${num}/${den}"` : `${num}/${den}"`;
+}
 
 // Glass pieces (cut list) for one wall run — mirrors the bay layout the render
 // uses, returned in feet. Each entry is a distinct panel/leaf with qty + size,
@@ -377,6 +388,7 @@ export default function VisualEstimatorPage() {
   const [placing, setPlacing] = useState(false);
   const [tmp, setTmp] = useState<Pt[]>([]);
   const [psfMap, setPsfMap] = useState<Record<string, number>>(Object.fromEntries(Object.entries(SYSTEMS).map(([k, v]) => [k, v.psf])));
+  const [dedMap, setDedMap] = useState<Record<string, number>>(Object.fromEntries(Object.entries(SYSTEMS).map(([k, v]) => [k, v.ded])));
   const [laborPsf, setLaborPsf] = useState(14);
   const [taxPct, setTaxPct] = useState(8.25);
   const [saving, setSaving] = useState(false);
@@ -505,38 +517,41 @@ export default function VisualEstimatorPage() {
   // Numbered opening schedule (BidUnity-style): each glass opening across every
   // wall gets a sequential tag O01, O02, … so the elevation drawing and the
   // schedule table cross-reference. wallOpenings[i] is the tag range per wall.
-  const schedule: { op: string; wall: number; system: string; glass: string; finish: string; size: string; qty: number; label: string }[] = [];
+  const dedFor = (system: string) => dedMap[system] ?? SYSTEMS[system]?.ded ?? 0;
+  const schedule: { op: string; wall: number; system: string; glass: string; finish: string; size: string; cut: string; qty: number; label: string }[] = [];
   const wallOpenings: string[] = [];
   {
     let n = 0;
     for (const w of cutList) {
       const start = n + 1;
+      const ded = dedFor(w.run.system);
       for (const p of w.pieces) {
         n++;
-        schedule.push({ op: `O${String(n).padStart(2, '0')}`, wall: w.i + 1, system: SYSTEMS[w.run.system].name, glass: SYSTEMS[w.run.system].note, finish: FINISHES[w.run.finish].name, size: `${fmtFt(p.w)} × ${fmtFt(p.h)}`, qty: p.qty, label: p.label });
+        schedule.push({ op: `O${String(n).padStart(2, '0')}`, wall: w.i + 1, system: SYSTEMS[w.run.system].name, glass: SYSTEMS[w.run.system].note, finish: FINISHES[w.run.finish].name, size: `${fmtFt(p.w)} × ${fmtFt(p.h)}`, cut: `${fmtIn(p.w * 12 - ded)} × ${fmtIn(p.h * 12 - ded)}`, qty: p.qty, label: p.label });
       }
       wallOpenings[w.i] = n < start ? '' : n === start ? `O${String(start).padStart(2, '0')}` : `O${String(start).padStart(2, '0')}–O${String(n).padStart(2, '0')}`;
     }
   }
-  const scheduleNote = schedule.map(o => `${o.op} · Wall ${o.wall} · ${o.qty}× ${o.label} · ${o.size} · ${o.system} ${o.finish}`).join('\n');
+  const scheduleNote = schedule.map(o => `${o.op} · Wall ${o.wall} · ${o.qty}× ${o.label} · opening ${o.size} · CUT ${o.cut} · ${o.system} ${o.finish}`).join('\n');
 
   // Open a clean, printable production / cut sheet in a new tab.
   const productionSheet = () => {
     const rows = cutList.map(w => {
-      const head = `<tr><td colspan="4" style="background:#0e2a4a;color:#fff;padding:6px 8px;font-weight:600">Wall ${w.i + 1} — ${SYSTEMS[w.run.system].name} · ${FINISHES[w.run.finish].name} · ${SYSTEMS[w.run.system].note} · run ${fmtFt(w.wFt)}</td></tr>`;
-      const body = w.pieces.map(p => `<tr><td style="text-align:center">${p.qty}</td><td>${p.label}</td><td>${fmtFt(p.w)}</td><td>${fmtFt(p.h)}</td></tr>`).join('');
+      const head = `<tr><td colspan="5" style="background:#0e2a4a;color:#fff;padding:6px 8px;font-weight:600">Wall ${w.i + 1} — ${SYSTEMS[w.run.system].name} · ${FINISHES[w.run.finish].name} · ${SYSTEMS[w.run.system].note} · run ${fmtFt(w.wFt)}</td></tr>`;
+      const ded = dedFor(w.run.system);
+      const body = w.pieces.map(p => `<tr><td style="text-align:center">${p.qty}</td><td>${p.label}</td><td><b>${fmtIn(p.w * 12 - ded)}</b></td><td><b>${fmtIn(p.h * 12 - ded)}</b></td><td style="color:#64748b">${fmtFt(p.w)} × ${fmtFt(p.h)}</td></tr>`).join('');
       return head + body;
     }).join('');
-    const schedRows = schedule.map(o => `<tr><td style="text-align:center;font-weight:600">${o.op}</td><td>Wall ${o.wall}</td><td>${o.system} · ${o.finish}</td><td>${o.label}</td><td style="text-align:center">${o.qty}</td><td>${o.size}</td></tr>`).join('');
+    const schedRows = schedule.map(o => `<tr><td style="text-align:center;font-weight:600">${o.op}</td><td>Wall ${o.wall}</td><td>${o.system} · ${o.finish}</td><td>${o.label}</td><td style="text-align:center">${o.qty}</td><td><b>${o.cut}</b></td><td style="color:#64748b">${o.size}</td></tr>`).join('');
     const html = `<!doctype html><meta charset="utf-8"><title>Production sheet — ${projectName || 'Glass enclosure'}</title>`
       + `<style>body{font:13px -apple-system,Segoe UI,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 2px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}th{background:#f1f5f9}.muted{color:#64748b}.tot{margin-top:10px;font-weight:600}@media print{button{display:none}}</style>`
       + `<div style="display:flex;justify-content:space-between;align-items:center"><div><h1>${projectName || 'Glass enclosure'}</h1><div class="muted">Production / Cut Sheet</div></div><button onclick="print()" style="padding:8px 14px;border:1px solid #0e2a4a;background:#0e2a4a;color:#fff;border-radius:8px;cursor:pointer">Print / Save PDF</button></div>`
       + `<div class="muted" style="margin-top:6px">Height ${fmtFt(heightFt)} · ${runs.length} wall(s) · ${area.toFixed(0)} sq ft · ${schedule.length} openings · ${totalPieces} pieces</div>`
       + `<h3 style="margin:16px 0 0;font-size:14px">Opening schedule</h3>`
-      + `<table><thead><tr><th style="width:46px;text-align:center">#</th><th style="width:70px">Location</th><th>System / Finish</th><th>Opening</th><th style="width:40px;text-align:center">Qty</th><th style="width:120px">Size</th></tr></thead><tbody>${schedRows}</tbody></table>`
+      + `<table><thead><tr><th style="width:46px;text-align:center">#</th><th style="width:70px">Location</th><th>System / Finish</th><th>Opening</th><th style="width:40px;text-align:center">Qty</th><th style="width:120px">Cut size</th><th style="width:110px">Nominal</th></tr></thead><tbody>${schedRows}</tbody></table>`
       + `<h3 style="margin:16px 0 0;font-size:14px">Cut list by wall</h3>`
-      + `<table><thead><tr><th style="width:48px;text-align:center">Qty</th><th>Piece</th><th style="width:90px">Width</th><th style="width:90px">Height</th></tr></thead><tbody>${rows}</tbody></table>`
-      + `<p class="muted">Sizes are nominal opening sizes — apply shop deductions before cutting. Confirm field measurements before fabrication.</p>`;
+      + `<table><thead><tr><th style="width:48px;text-align:center">Qty</th><th>Piece</th><th style="width:80px">Cut W</th><th style="width:80px">Cut H</th><th style="width:120px">Nominal opening</th></tr></thead><tbody>${rows}</tbody></table>`
+      + `<p class="muted"><b>Cut size</b> = opening minus the per-system glass deduction (set in the estimator). Grey = nominal opening. Confirm field measurements before fabrication.</p>`;
     const win = window.open('', '_blank');
     if (win) { win.document.write(html); win.document.close(); win.focus(); }
     else alert('Allow pop-ups to open the production sheet.');
@@ -715,7 +730,7 @@ export default function VisualEstimatorPage() {
                   {w.pieces.map((p, j) => (
                     <div key={j} className="flex justify-between text-[11px] pl-2.5">
                       <span className="text-slate-500">{p.qty}× {p.label}</span>
-                      <span className="font-medium text-slate-800">{fmtFt(p.w)} × {fmtFt(p.h)}</span>
+                      <span className="font-medium text-emerald-700 whitespace-nowrap">{fmtIn(p.w * 12 - dedFor(w.run.system))} × {fmtIn(p.h * 12 - dedFor(w.run.system))}</span>
                     </div>
                   ))}
                 </div>
@@ -725,7 +740,7 @@ export default function VisualEstimatorPage() {
               <div className="border-t border-slate-100 mt-2 pt-1 text-[11px]">
                 <div className="flex justify-between"><span className="text-slate-500">Total pieces</span><span className="font-semibold">{totalPieces}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Total glass</span><span className="font-semibold">{area.toFixed(0)} sq ft</span></div>
-                <p className="text-[10px] text-slate-400 mt-1">Cut sizes save into the estimate &amp; the production sheet. Nominal opening sizes — apply shop deductions before cutting.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Sizes shown are <b>cut sizes</b> (opening minus the per-system deduction). Confirm field measurements before fabrication.</p>
               </div>
             )}
           </div>
@@ -742,24 +757,38 @@ export default function VisualEstimatorPage() {
                       <th className="text-left font-medium px-1">Loc</th>
                       <th className="text-left font-medium px-1">Opening</th>
                       <th className="text-center font-medium px-1">Qty</th>
-                      <th className="text-right font-medium px-1">Size</th>
+                      <th className="text-right font-medium px-1">Cut size</th>
                     </tr>
                   </thead>
                   <tbody>
                     {schedule.map(o => (
                       <tr key={o.op} className="border-b border-slate-50">
-                        <td className="py-1 px-1 font-semibold text-navy-700">{o.op}</td>
-                        <td className="px-1 text-slate-500">W{o.wall}</td>
-                        <td className="px-1 text-slate-600">{o.label}<span className="block text-[10px] text-slate-400">{o.system} · {o.finish}</span></td>
-                        <td className="px-1 text-center">{o.qty}</td>
-                        <td className="px-1 text-right font-medium text-slate-800 whitespace-nowrap">{o.size}</td>
+                        <td className="py-1 px-1 font-semibold text-navy-700 align-top">{o.op}</td>
+                        <td className="px-1 text-slate-500 align-top">W{o.wall}</td>
+                        <td className="px-1 text-slate-600 align-top">{o.label}<span className="block text-[10px] text-slate-400">{o.system} · {o.finish}</span></td>
+                        <td className="px-1 text-center align-top">{o.qty}</td>
+                        <td className="px-1 text-right whitespace-nowrap align-top"><span className="font-semibold text-emerald-700">{o.cut}</span><span className="block text-[10px] text-slate-400">opening {o.size}</span></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-            <p className="text-[10px] text-slate-400 mt-1">Numbered openings match the elevation drawing — each wall label shows its O# range.</p>
+            <p className="text-[10px] text-slate-400 mt-1">Cut sizes include the per-system glass deduction (editable below). Numbered openings match the elevation drawing.</p>
+          </div>
+
+          <div className="card p-3">
+            <h2 className="text-sm font-semibold mb-2">Glass deductions (in)</h2>
+            <p className="text-[10px] text-slate-400 mb-2">Subtracted from each opening (width &amp; height) to give the cut glass size. Tune to your shop &amp; framing system.</p>
+            {usedSystems.length === 0 && <p className="text-[11px] text-slate-400">Pick a system to set its deduction.</p>}
+            {usedSystems.map(s => (
+              <div key={s} className="flex items-center gap-2 mb-1">
+                <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: SYSTEMS[s].color }} />
+                <label className="text-[11px] text-slate-500 flex-1">{SYSTEMS[s].name}</label>
+                <input type="number" step={0.0625} min={0} className="input text-sm w-24" value={dedMap[s] ?? SYSTEMS[s].ded} onChange={e => setDedMap(m => ({ ...m, [s]: +e.target.value || 0 }))} />
+                <span className="text-[10px] text-slate-400">in</span>
+              </div>
+            ))}
           </div>
 
           <div className="card p-3">
