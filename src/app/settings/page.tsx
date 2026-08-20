@@ -96,6 +96,29 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
+
+        <div className="card p-6">
+          <h2 className="text-lg font-semibold mb-4">Proposal &amp; Contract</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Default Deposit (%)</label>
+              <input className="input" type="number" value={s.default_deposit_pct || ''} onChange={e => ch('default_deposit_pct', e.target.value)} placeholder="50" />
+            </div>
+            <div>
+              <label className="label">Workmanship Warranty (months)</label>
+              <input className="input" type="number" value={s.warranty_months || ''} onChange={e => ch('warranty_months', e.target.value)} placeholder="12" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="label">Contract / Agreement Wording</label>
+              <p className="text-xs text-slate-500 mb-1">
+                Shown on signable proposals. Leave blank to use the standard glass &amp; glazing agreement. Tokens you can use:{' '}
+                <code className="text-[10px] bg-slate-100 px-1 rounded">{'{{company}} {{client}} {{total}} {{deposit_pct}} {{deposit_amount}} {{balance_amount}} {{warranty_months}} {{valid_days}}'}</code>
+              </p>
+              <textarea className="input font-mono text-xs" rows={8} value={s.contract_terms || ''} onChange={e => ch('contract_terms', e.target.value)} placeholder="Leave blank to use the standard template…" />
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">This is a general template, not legal advice — have it reviewed for your state before relying on it.</p>
+        </div>
       </form>
 
       <div className="max-w-2xl mt-8">

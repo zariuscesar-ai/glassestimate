@@ -21,6 +21,9 @@ export interface CompanyRow {
   default_due_days: number;
   default_notes: string;
   default_terms: string;
+  contract_terms?: string;        // proposal agreement wording (overrides default template)
+  default_deposit_pct?: number;   // default deposit % shown on proposals
+  warranty_months?: number;       // workmanship warranty length in months
   created_at: string;
 }
 
@@ -104,6 +107,13 @@ export interface InvoiceRow {
   visual_project_id: number | null;
   created_at: string;
   updated_at: string;
+  // Proposal / e-signature (set once a branded proposal is signed)
+  signature_data?: string;   // data URL of the drawn signature
+  signed_by?: string;        // typed full name of the signer
+  signed_at?: string;        // ISO timestamp of signing
+  proposal_terms?: string;   // snapshot of the contract wording at signing
+  deposit_pct?: number;      // deposit % applied to this proposal
+  public_token?: string;     // token for the shareable public signing link
   client_name?: string;
   items?: InvoiceItemRow[];
   payments?: PaymentRow[];
@@ -812,6 +822,46 @@ export const db = {
         s.invoices[idx].status = status as InvoiceRow['status'];
         s.invoices[idx].updated_at = now();
         return assembleInvoice(s, id)!;
+      });
+    },
+
+    // Record a signature on a proposal and mark it accepted.
+    sign(id: number, data: { signature_data: string; signed_by: string; proposal_terms?: string; deposit_pct?: number }): Promise<InvoiceRow | null> {
+      return write((s) => {
+        const idx = s.invoices.findIndex((i) => i.id === id);
+        if (idx === -1) return null;
+        s.invoices[idx] = {
+          ...s.invoices[idx],
+          signature_data: data.signature_data,
+          signed_by: data.signed_by,
+          signed_at: now(),
+          proposal_terms: data.proposal_terms ?? s.invoices[idx].proposal_terms,
+          deposit_pct: data.deposit_pct ?? s.invoices[idx].deposit_pct,
+          status: 'accepted',
+          updated_at: now(),
+        };
+        return assembleInvoice(s, id)!;
+      });
+    },
+
+    // Look up a proposal by its public signing token (no auth).
+    getByPublicToken(token: string): Promise<InvoiceRow | undefined> {
+      return read((s) => {
+        const inv = s.invoices.find((i) => i.public_token === token);
+        return inv ? assembleInvoice(s, inv.id) : undefined;
+      });
+    },
+
+    // Ensure a public signing token exists; returns the token.
+    setPublicToken(id: number, token: string): Promise<string | null> {
+      return write((s) => {
+        const idx = s.invoices.findIndex((i) => i.id === id);
+        if (idx === -1) return null;
+        if (!s.invoices[idx].public_token) {
+          s.invoices[idx].public_token = token;
+          s.invoices[idx].updated_at = now();
+        }
+        return s.invoices[idx].public_token || null;
       });
     },
   },

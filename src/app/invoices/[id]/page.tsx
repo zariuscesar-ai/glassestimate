@@ -82,6 +82,7 @@ export default function InvoiceDetailPage() {
           {inv.status === 'draft' && <button onClick={() => updateStatus('sent')} className="btn-primary btn-sm">Mark Sent</button>}
           {(inv.status === 'sent' || inv.status === 'draft') && <button onClick={() => updateStatus('paid')} className="btn-secondary btn-sm">Mark Paid</button>}
           <button onClick={window.print} className="btn-secondary btn-sm">Print</button>
+          {inv.type === 'estimate' && <Link href={`/invoices/${inv.id}/proposal`} className="btn-primary btn-sm">📝 Proposal &amp; e-sign</Link>}
           {inv.type === 'estimate' && inv.status !== 'converted' && <button onClick={async () => { const res = await fetch(`/api/invoices/${params.id}/convert`, { method: 'POST' }); if (res.ok) { const newInv = await res.json(); router.push(`/invoices/${newInv.id}`); } else alert('Conversion failed'); }} className="btn-primary btn-sm">Convert to Invoice</button>}
           <Link href={`/invoices/${inv.id}/edit`} className="btn-secondary btn-sm">Edit</Link>
           <button onClick={handleDelete} className="btn-ghost btn-sm text-red-600">Delete</button>
