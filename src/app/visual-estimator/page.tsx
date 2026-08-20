@@ -168,7 +168,7 @@ function drawAssembly(ctx: CanvasRenderingContext2D, ox: number, oy: number, W: 
 // reads like a proper shop elevation page (Wall 1, Wall 2, …). Tiles flow across
 // rows, auto-scaled to fit; the selected wall is ringed. widthsFt[i] is the
 // finished width of wall i in feet.
-function drawElevationSheet(ctx: CanvasRenderingContext2D, cw: number, ch: number, widthsFt: number[], runs: Run[], hFt: number, sel: number, title: string) {
+function drawElevationSheet(ctx: CanvasRenderingContext2D, cw: number, ch: number, widthsFt: number[], runs: Run[], hFt: number, sel: number, title: string, openingLabels: string[] = []) {
   const g = ctx.createLinearGradient(0, 0, 0, ch);
   g.addColorStop(0, '#1a2740'); g.addColorStop(0.7, '#131f34'); g.addColorStop(0.7, '#0e1828'); g.addColorStop(1, '#0a1220');
   ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch);
@@ -216,7 +216,8 @@ function drawElevationSheet(ctx: CanvasRenderingContext2D, cw: number, ch: numbe
       // colour chip + label
       ctx.fillStyle = sys.color; ctx.fillRect(x, y + 3, 12, 6);
       ctx.fillStyle = i === sel ? '#dbe7ff' : '#9fb0cc'; ctx.font = '600 12px -apple-system,sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText(`Wall ${i + 1} · ${sys.name}`, x + 18, y + 13);
+      const olab = openingLabels[i] ? `  ·  ${openingLabels[i]}` : '';
+      ctx.fillText(`Wall ${i + 1} · ${sys.name}${olab}`, x + 18, y + 13);
       // floor shadow + the elevation itself
       ctx.save(); ctx.filter = 'blur(6px)'; ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x + 6, top + Hpx - 4, wpx, 12); ctx.restore();
       drawAssembly(ctx, x, top, wpx, Hpx, false, run, wFt, hFt);
@@ -428,7 +429,7 @@ export default function VisualEstimatorPage() {
     }
     if (view === 'plan') { drawPlan(ctx, cv.width, cv.height, pts, runs, sel, projectName, getPlanT(pts, cv.width, cv.height, drawMode), drawMode, drawMode && dragIdx == null ? hoverFt : null); return; }
     // ELEVATION VIEW — a multi-wall elevation sheet when the job has several walls.
-    if (elevSheet && runs.length > 1) { drawElevationSheet(ctx, cv.width, cv.height, runs.map((_, i) => runLen(i)), runs, heightFt, sel, projectName); return; }
+    if (elevSheet && runs.length > 1) { drawElevationSheet(ctx, cv.width, cv.height, runs.map((_, i) => runLen(i)), runs, heightFt, sel, projectName, wallOpenings); return; }
     const g = ctx.createLinearGradient(0, 0, 0, cv.height);
     g.addColorStop(0, '#1a2740'); g.addColorStop(0.7, '#131f34'); g.addColorStop(0.7, '#0e1828'); g.addColorStop(1, '#0a1220');
     ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -501,6 +502,24 @@ export default function VisualEstimatorPage() {
   const totalPieces = cutList.reduce((s, w) => s + w.pieces.reduce((a, p) => a + p.qty, 0), 0);
   const cutNote = cutList.map(w => `Wall ${w.i + 1} (${SYSTEMS[w.run.system].name}, ${FINISHES[w.run.finish].name}): ` + w.pieces.map(p => `${p.qty}× ${fmtFt(p.w)}×${fmtFt(p.h)} ${p.label}`).join('; ')).join('  |  ');
 
+  // Numbered opening schedule (BidUnity-style): each glass opening across every
+  // wall gets a sequential tag O01, O02, … so the elevation drawing and the
+  // schedule table cross-reference. wallOpenings[i] is the tag range per wall.
+  const schedule: { op: string; wall: number; system: string; glass: string; finish: string; size: string; qty: number; label: string }[] = [];
+  const wallOpenings: string[] = [];
+  {
+    let n = 0;
+    for (const w of cutList) {
+      const start = n + 1;
+      for (const p of w.pieces) {
+        n++;
+        schedule.push({ op: `O${String(n).padStart(2, '0')}`, wall: w.i + 1, system: SYSTEMS[w.run.system].name, glass: SYSTEMS[w.run.system].note, finish: FINISHES[w.run.finish].name, size: `${fmtFt(p.w)} × ${fmtFt(p.h)}`, qty: p.qty, label: p.label });
+      }
+      wallOpenings[w.i] = n < start ? '' : n === start ? `O${String(start).padStart(2, '0')}` : `O${String(start).padStart(2, '0')}–O${String(n).padStart(2, '0')}`;
+    }
+  }
+  const scheduleNote = schedule.map(o => `${o.op} · Wall ${o.wall} · ${o.qty}× ${o.label} · ${o.size} · ${o.system} ${o.finish}`).join('\n');
+
   // Open a clean, printable production / cut sheet in a new tab.
   const productionSheet = () => {
     const rows = cutList.map(w => {
@@ -508,10 +527,14 @@ export default function VisualEstimatorPage() {
       const body = w.pieces.map(p => `<tr><td style="text-align:center">${p.qty}</td><td>${p.label}</td><td>${fmtFt(p.w)}</td><td>${fmtFt(p.h)}</td></tr>`).join('');
       return head + body;
     }).join('');
+    const schedRows = schedule.map(o => `<tr><td style="text-align:center;font-weight:600">${o.op}</td><td>Wall ${o.wall}</td><td>${o.system} · ${o.finish}</td><td>${o.label}</td><td style="text-align:center">${o.qty}</td><td>${o.size}</td></tr>`).join('');
     const html = `<!doctype html><meta charset="utf-8"><title>Production sheet — ${projectName || 'Glass enclosure'}</title>`
       + `<style>body{font:13px -apple-system,Segoe UI,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 2px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}th{background:#f1f5f9}.muted{color:#64748b}.tot{margin-top:10px;font-weight:600}@media print{button{display:none}}</style>`
       + `<div style="display:flex;justify-content:space-between;align-items:center"><div><h1>${projectName || 'Glass enclosure'}</h1><div class="muted">Production / Cut Sheet</div></div><button onclick="print()" style="padding:8px 14px;border:1px solid #0e2a4a;background:#0e2a4a;color:#fff;border-radius:8px;cursor:pointer">Print / Save PDF</button></div>`
-      + `<div class="muted" style="margin-top:6px">Height ${fmtFt(heightFt)} · ${runs.length} wall(s) · ${area.toFixed(0)} sq ft · ${totalPieces} pieces</div>`
+      + `<div class="muted" style="margin-top:6px">Height ${fmtFt(heightFt)} · ${runs.length} wall(s) · ${area.toFixed(0)} sq ft · ${schedule.length} openings · ${totalPieces} pieces</div>`
+      + `<h3 style="margin:16px 0 0;font-size:14px">Opening schedule</h3>`
+      + `<table><thead><tr><th style="width:46px;text-align:center">#</th><th style="width:70px">Location</th><th>System / Finish</th><th>Opening</th><th style="width:40px;text-align:center">Qty</th><th style="width:120px">Size</th></tr></thead><tbody>${schedRows}</tbody></table>`
+      + `<h3 style="margin:16px 0 0;font-size:14px">Cut list by wall</h3>`
       + `<table><thead><tr><th style="width:48px;text-align:center">Qty</th><th>Piece</th><th style="width:90px">Width</th><th style="width:90px">Height</th></tr></thead><tbody>${rows}</tbody></table>`
       + `<p class="muted">Sizes are nominal opening sizes — apply shop deductions before cutting. Confirm field measurements before fabrication.</p>`;
     const win = window.open('', '_blank');
@@ -527,7 +550,7 @@ export default function VisualEstimatorPage() {
       runs.forEach((r, i) => { const L = runLen(i); const a = L * heightFt; items.push({ description: `Wall ${i + 1}: ${SYSTEMS[r.system].name} ${FINISHES[r.finish].name} — ${fmtFt(L)} × ${fmtFt(heightFt)} = ${a.toFixed(0)} sq ft`, quantity: Math.round(a * 10) / 10, unit_price: psfMap[r.system] ?? SYSTEMS[r.system].psf }); if (DOORS[r.door].leaves > 0) items.push({ description: `Wall ${i + 1}: ${DOORS[r.door].name}${r.transom ? ' + transom' : ''}${r.sidelites ? ' + sidelites' : ''}`, quantity: 1, unit_price: DOORS[r.door].adder }); });
       items.push({ description: 'Installation labor', quantity: Math.round(area * 10) / 10, unit_price: laborPsf });
       const today = new Date().toISOString().split('T')[0]; const due = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
-      const res = await fetch('/api/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: parseInt(clientId), issue_date: today, due_date: due, type: 'estimate', items, tax_rate: taxPct, notes: `${projectName || 'Glass enclosure'} — ${runs.length} wall(s), ${area.toFixed(0)} sq ft. ${usedSystems.map(s => SYSTEMS[s].name).join(', ')}.\n\nGLASS CUT LIST (${totalPieces} pieces):\n${cutNote}`, terms: '50% deposit required. Estimate valid 30 days.' }) });
+      const res = await fetch('/api/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: parseInt(clientId), issue_date: today, due_date: due, type: 'estimate', items, tax_rate: taxPct, notes: `${projectName || 'Glass enclosure'} — ${runs.length} wall(s), ${area.toFixed(0)} sq ft. ${usedSystems.map(s => SYSTEMS[s].name).join(', ')}.\n\nOPENING SCHEDULE (${schedule.length} openings):\n${scheduleNote}\n\nCUT LIST (${totalPieces} pieces):\n${cutNote}`, terms: '50% deposit required. Estimate valid 30 days.' }) });
       if (!res.ok) { alert('Failed to create estimate'); return; }
       const inv = await res.json(); router.push(`/invoices/${inv.id}`);
     } catch { alert('Error'); } finally { setSaving(false); }
@@ -705,6 +728,38 @@ export default function VisualEstimatorPage() {
                 <p className="text-[10px] text-slate-400 mt-1">Cut sizes save into the estimate &amp; the production sheet. Nominal opening sizes — apply shop deductions before cutting.</p>
               </div>
             )}
+          </div>
+
+          <div className="card p-3">
+            <h2 className="text-sm font-semibold mb-2">Opening schedule</h2>
+            {schedule.length === 0 && <p className="text-[11px] text-slate-400">Openings appear here once you add walls.</p>}
+            {schedule.length > 0 && (
+              <div className="max-h-72 overflow-auto">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="text-slate-400 border-b border-slate-100">
+                      <th className="text-left font-medium py-1 px-1">#</th>
+                      <th className="text-left font-medium px-1">Loc</th>
+                      <th className="text-left font-medium px-1">Opening</th>
+                      <th className="text-center font-medium px-1">Qty</th>
+                      <th className="text-right font-medium px-1">Size</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedule.map(o => (
+                      <tr key={o.op} className="border-b border-slate-50">
+                        <td className="py-1 px-1 font-semibold text-navy-700">{o.op}</td>
+                        <td className="px-1 text-slate-500">W{o.wall}</td>
+                        <td className="px-1 text-slate-600">{o.label}<span className="block text-[10px] text-slate-400">{o.system} · {o.finish}</span></td>
+                        <td className="px-1 text-center">{o.qty}</td>
+                        <td className="px-1 text-right font-medium text-slate-800 whitespace-nowrap">{o.size}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="text-[10px] text-slate-400 mt-1">Numbered openings match the elevation drawing — each wall label shows its O# range.</p>
           </div>
 
           <div className="card p-3">
