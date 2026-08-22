@@ -9,6 +9,13 @@ export interface CompanyRow {
   slug: string;
   plan?: 'showers' | 'flat' | 'both';
   shower_rates?: RateTable;
+  // Stripe subscription billing (optional — only present once a shop reaches
+  // checkout). Access to the app is gated on subscription_status; see
+  // lib/stripe.ts (Node) and lib/access-edge.ts (Edge/middleware).
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
+  subscription_status?: 'none' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'incomplete' | 'incomplete_expired' | 'unpaid' | 'paused';
+  current_period_end?: number; // epoch seconds
   logo: string;
   address: string;
   phone: string;
@@ -500,6 +507,8 @@ export const db = {
     all(): Promise<CompanyRow[]> { return read((s) => [...s.companies]); },
     getById(id: number): Promise<CompanyRow | undefined> { return read((s) => s.companies.find((c) => c.id === id)); },
     getBySlug(slug: string): Promise<CompanyRow | undefined> { return read((s) => s.companies.find((c) => c.slug === slug)); },
+    getByStripeCustomer(customerId: string): Promise<CompanyRow | undefined> { return read((s) => s.companies.find((c) => c.stripe_customer_id === customerId)); },
+    getByStripeSubscription(subscriptionId: string): Promise<CompanyRow | undefined> { return read((s) => s.companies.find((c) => c.stripe_subscription_id === subscriptionId)); },
     insert(data: Partial<CompanyRow>): Promise<CompanyRow> {
       return write((s) => {
         const row: CompanyRow = {

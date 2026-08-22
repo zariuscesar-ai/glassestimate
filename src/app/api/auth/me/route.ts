@@ -16,6 +16,14 @@ export async function GET() {
 
   return NextResponse.json({
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
-    company: company ? { id: company.id, name: company.name } : null,
+    company: company
+      ? {
+          id: company.id,
+          name: company.name,
+          plan: company.plan || 'both',
+          subscription_status: company.subscription_status || 'none',
+          current_period_end: company.current_period_end || null,
+        }
+      : null,
   });
 }

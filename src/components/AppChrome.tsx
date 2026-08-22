@@ -3,9 +3,10 @@
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 
-// Auth pages + the public customer request page render full-width with no app
-// chrome; everything else gets the sidebar + main layout.
-const BARE_PREFIXES = ['/login', '/signup', '/showers/request', '/p'];
+// Auth pages, the billing paywall, and the public customer pages (shower
+// request + signable proposal) render full-width with no app chrome; everything
+// else gets the sidebar + main layout.
+const BARE_PREFIXES = ['/login', '/signup', '/billing', '/showers/request', '/p'];
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || '/';
