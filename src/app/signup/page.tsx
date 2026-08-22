@@ -99,6 +99,12 @@ function SignupForm() {
             className="w-full rounded-lg bg-blue-600 text-white font-medium py-2.5 text-sm hover:bg-blue-700 disabled:opacity-60">
             {loading ? "Creating…" : "Claim founding price"}
           </button>
+          <p className="text-xs text-slate-400 text-center">
+            By creating an account, you agree to our{" "}
+            <Link href="/terms" className="text-blue-600 hover:underline">Terms of Service</Link>,{" "}
+            <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>, and{" "}
+            <Link href="/disclaimer" className="text-blue-600 hover:underline">Disclaimer</Link>.
+          </p>
         </form>
         <p className="text-center text-sm text-slate-500 mt-4">
           Already have an account?{" "}
