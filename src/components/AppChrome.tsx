@@ -5,7 +5,7 @@ import Sidebar from './Sidebar';
 
 // Auth pages + the public customer request page render full-width with no app
 // chrome; everything else gets the sidebar + main layout.
-const BARE_PREFIXES = ['/login', '/signup', '/showers/request', '/p'];
+const BARE_PREFIXES = ['/login', '/signup', '/showers/request', '/p', '/privacy', '/terms', '/disclaimer'];
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || '/';

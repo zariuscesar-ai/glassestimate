@@ -53,6 +53,7 @@ export default function Sidebar() {
     { href: '/estimates', label: 'Estimates', icon: '📋' },
     { href: '/jobs', label: 'Projects', icon: '🔧' },
     { href: '/payments', label: 'Payments', icon: '💰' },
+    { href: '/glass-replacement', label: 'Glass Replacement', icon: '🪟' },
     { href: '/visual-estimator', label: 'Flat Glass Estimator', icon: '🎨' },
     { href: '/showers', label: 'Shower Estimator', icon: '🚿' },
     { href: '/shape-calculator', label: 'Shape Calculator', icon: '📐' },
@@ -101,6 +102,13 @@ export default function Sidebar() {
           <button onClick={toggleTheme} className="text-sm hover:scale-110 transition-transform" title={dark ? 'Switch to light' : 'Switch to dark'}>
             {dark ? '☀️' : '🌙'}
           </button>
+        </div>
+        <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
+          <Link href="/terms" className="hover:text-slate-300">Terms</Link>
+          <span className="text-slate-700">·</span>
+          <Link href="/privacy" className="hover:text-slate-300">Privacy</Link>
+          <span className="text-slate-700">·</span>
+          <Link href="/disclaimer" className="hover:text-slate-300">Disclaimer</Link>
         </div>
         <div className="text-[10px] text-slate-600">SaaS v2.1</div>
       </div>
